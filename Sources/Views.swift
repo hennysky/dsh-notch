@@ -24,6 +24,30 @@ extension BalanceModel.Level {
     }
 }
 
+/// 标题栏图标按钮。
+///
+/// 图标只有 ~11pt，命中区几乎等于图标本身，很难点中。
+/// 这里把可点区域扩到 26×26，图标视觉大小不变——只有 `.contentShape`
+/// 把整个 frame 变成命中区，才不是只有笔画本身可点。
+private struct HeaderIconButton: View {
+    let systemName: String
+    let opacity: Double
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.white.opacity(opacity))
+                .frame(width: Self.hitSize, height: Self.hitSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    static let hitSize: CGFloat = 26
+}
+
 /// 卡片外形：顶部与屏幕边缘齐平（与刘海连成一体），底部圆角。
 private var cardShape: UnevenRoundedRectangle {
     UnevenRoundedRectangle(topLeadingRadius: 0,
@@ -84,22 +108,15 @@ struct ExpandedCard: View {
                 .foregroundStyle(.white.opacity(0.85))
             Spacer(minLength: 0)
 
-            Button(action: onToggleSettings) {
-                Image(systemName: showSettings ? "chevron.left" : "slider.horizontal.3")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.white.opacity(showSettings ? 0.95 : 0.65))
-            }
-            .buttonStyle(.plain)
+            HeaderIconButton(systemName: showSettings ? "chevron.left" : "slider.horizontal.3",
+                             opacity: showSettings ? 0.95 : 0.65,
+                             action: onToggleSettings)
 
             if !showSettings {
-                Button {
+                HeaderIconButton(systemName: "arrow.clockwise",
+                                 opacity: model.isRefreshing ? 0.3 : 0.65) {
                     Task { await model.refresh() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(model.isRefreshing ? 0.3 : 0.65))
                 }
-                .buttonStyle(.plain)
                 .disabled(model.isRefreshing)
             }
         }
@@ -192,25 +209,24 @@ struct SettingsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             row("动画时长", NotchSettings.duration(settings.animationDuration))
-            Slider(value: $settings.animationDuration, in: NotchSettings.durationRange)
-                .modifier(CompactSlider())
+            SettingSlider(value: $settings.animationDuration, range: NotchSettings.durationRange)
 
             easingPicker
 
             row("余额低于", NotchSettings.money(settings.lowBalanceThreshold))
                 .padding(.top, 9)
-            Slider(value: $settings.lowBalanceThreshold, in: NotchSettings.lowBalanceRange, step: 1)
-                .modifier(CompactSlider())
+            SettingSlider(value: $settings.lowBalanceThreshold,
+                          range: NotchSettings.lowBalanceRange, step: 1)
 
             row("单次消耗", NotchSettings.money(settings.burnThreshold))
                 .padding(.top, 7)
-            Slider(value: $settings.burnThreshold, in: NotchSettings.burnRange, step: 0.5)
-                .modifier(CompactSlider())
+            SettingSlider(value: $settings.burnThreshold,
+                          range: NotchSettings.burnRange, step: 0.5)
 
             row("弹出停留", NotchSettings.seconds(settings.alertDuration))
                 .padding(.top, 7)
-            Slider(value: $settings.alertDuration, in: NotchSettings.alertDurationRange, step: 1)
-                .modifier(CompactSlider())
+            SettingSlider(value: $settings.alertDuration,
+                          range: NotchSettings.alertDurationRange, step: 1)
 
             HStack(spacing: 12) {
                 Button("恢复默认") { settings.reset() }
@@ -270,12 +286,49 @@ struct SettingsPage: View {
     }
 }
 
-private struct CompactSlider: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .controlSize(.mini)
-            .tint(.white.opacity(0.75))
-            .padding(.top, 1)
+/// 自绘滑杆。
+///
+/// 不用 SwiftUI 的 `Slider`：部署目标降到 macOS 14 之后它退回成 AppKit 的
+/// `NSSlider`，而 `ImageRenderer` 画不出 AppKit 控件（渲染出来是一块带禁止符号的
+/// 黄条）。本项目没有屏幕录制权限、只能靠离屏渲染自查，自绘才能验证到真实效果——
+/// 分段控件当初也是因为同一个原因自绘的。
+private struct SettingSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step: Double = 0
+
+    private let knob: CGFloat = 11
+    private let trackHeight: CGFloat = 3
+    private let rowHeight: CGFloat = 16
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = max(geo.size.width, 1)
+            let span = range.upperBound - range.lowerBound
+            let fraction = CGFloat(min(max((value - range.lowerBound) / span, 0), 1))
+
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.16))
+                    .frame(width: width, height: trackHeight)
+                Capsule().fill(Color.white.opacity(0.80))
+                    .frame(width: width * fraction, height: trackHeight)
+                Circle().fill(Color.white)
+                    .frame(width: knob, height: knob)
+                    .offset(x: width * fraction - knob / 2)
+            }
+            .frame(width: width, height: rowHeight)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0).onChanged { gesture in
+                    let ratio = min(max(gesture.location.x / width, 0), 1)
+                    var raw = range.lowerBound + Double(ratio) * span
+                    if step > 0 { raw = (raw / step).rounded() * step }
+                    value = min(max(raw, range.lowerBound), range.upperBound)
+                }
+            )
+        }
+        .frame(height: rowHeight)
+        .padding(.top, 1)
     }
 }
 

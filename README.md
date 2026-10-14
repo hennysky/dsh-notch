@@ -1,6 +1,6 @@
 # dsh-notch
 
-**v0.4** — 在 MacBook 刘海区显示 DeepSeek Harness 余额，额度异常时主动弹出提醒，
+**v0.5** — 在 MacBook 刘海区显示 DeepSeek Harness 余额，额度异常时主动弹出提醒，
 卡片内可直接跳转充值。
 
 点击刘海展开卡片，再点收起。卡片内置动画参数与额度提醒设置。
