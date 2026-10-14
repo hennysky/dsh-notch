@@ -209,6 +209,8 @@ final class NotchPresenter: BalancePresenting {
     func setExpanded(_ expanded: Bool) {
         dshLog("setExpanded(\(expanded))")
         model.isExpanded = expanded
+        // 点开时就该看到最新余额，不能等下一次 5 分钟轮询
+        if expanded { model.refreshIfStale() }
 
         // 内容状态故意滞后于窗口状态：
         // 展开时立刻置位，让窗口动画把卡片「拉」出来；

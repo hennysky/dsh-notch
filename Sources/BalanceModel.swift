@@ -24,6 +24,8 @@ final class BalanceModel: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var detector = AlertDetector()
     private var costState = DailyCostStore.load()
+    /// 上一次**发起**查询的时间（成败都记）。用于「点开时补一次」的限流。
+    private var lastAttemptAt: Date?
 
     init(settings: NotchSettings) {
         self.settings = settings
@@ -45,9 +47,25 @@ final class BalanceModel: ObservableObject {
         pollTask = nil
     }
 
+    /// 点开卡片 / 菜单栏时调用：只在数据够旧时才真的打接口。
+    ///
+    /// 用户的预期是「点开就看到最新余额」，但无脑刷新会在反复点开时打爆接口
+    /// （实测触发过 HTTP 429），所以配一个下限。
+    func refreshIfStale() {
+        let now = Date()
+        guard RefreshPolicy.shouldRefresh(lastAttemptAt: lastAttemptAt, now: now) else {
+            let age = lastAttemptAt.map { Int(now.timeIntervalSince($0)) } ?? -1
+            dshLog("余额 \(age)s 前刚查过，跳过刷新")
+            return
+        }
+        dshLog("点开触发刷新")
+        Task { await refresh() }
+    }
+
     func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
+        lastAttemptAt = Date()
         defer { isRefreshing = false }
         do {
             let fresh = try await client.fetch()

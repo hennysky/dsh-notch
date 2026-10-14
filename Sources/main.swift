@@ -483,6 +483,53 @@ func runSettingsCheck() -> Int32 {
     return failed == 0 ? 0 : 1
 }
 
+// MARK: - 刷新时机自检
+//
+// 「点开就刷新」必须配限流，否则反复点开会打爆接口（实测触发过 HTTP 429）。
+
+@MainActor
+func runRefreshCheck() -> Int32 {
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String) {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+
+    let now = Date()
+    let floor = RefreshPolicy.minimumInterval
+
+    check("从未查询过 → 刷新",
+          RefreshPolicy.shouldRefresh(lastAttemptAt: nil, now: now),
+          "lastAttemptAt = nil")
+
+    check("5 秒前查过 → 跳过（避免反复点开打爆接口）",
+          !RefreshPolicy.shouldRefresh(lastAttemptAt: now.addingTimeInterval(-5), now: now),
+          "间隔 5s < 下限 \(Int(floor))s")
+
+    check("29 秒前查过 → 跳过",
+          !RefreshPolicy.shouldRefresh(lastAttemptAt: now.addingTimeInterval(-29), now: now),
+          "间隔 29s < 下限 \(Int(floor))s")
+
+    check("恰好 \(Int(floor)) 秒 → 刷新（边界包含）",
+          RefreshPolicy.shouldRefresh(lastAttemptAt: now.addingTimeInterval(-floor), now: now),
+          "间隔 \(Int(floor))s ≥ 下限")
+
+    check("5 分钟前查过 → 刷新",
+          RefreshPolicy.shouldRefresh(lastAttemptAt: now.addingTimeInterval(-300), now: now),
+          "间隔 300s")
+
+    check("下限可覆盖（用于测试与将来做成设置）",
+          RefreshPolicy.shouldRefresh(lastAttemptAt: now.addingTimeInterval(-5), now: now,
+                                      minimumInterval: 3),
+          "下限 3s 时，间隔 5s 应刷新")
+
+    print("")
+    print("  前台刷新下限 \(Int(floor))s ｜ 后台轮询 300s")
+    print(failed == 0 ? "刷新时机判定全部通过" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
 // MARK: - 入口
 
 if CommandLine.arguments.contains("--version") {
@@ -509,6 +556,9 @@ if CommandLine.arguments.contains("--alertcheck") {
 }
 if CommandLine.arguments.contains("--costcheck") {
     exit(MainActor.assumeIsolated { runCostCheck() })
+}
+if CommandLine.arguments.contains("--refreshcheck") {
+    exit(MainActor.assumeIsolated { runRefreshCheck() })
 }
 if CommandLine.arguments.contains("--settingscheck") {
     exit(MainActor.assumeIsolated { runSettingsCheck() })

@@ -135,6 +135,7 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
         if popover.isShown {
             popover.performClose(nil)
         } else {
+            model.refreshIfStale()   // 点开就该看到最新余额
             state.isExpanded = true
             updateTitle()
             hosting?.rootView = makeRootView()
