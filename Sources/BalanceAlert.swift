@@ -24,6 +24,14 @@ struct BalanceAlert: Equatable {
         }
     }
 
+    /// 菜单栏形态下的紧凑文案。菜单栏很窄，用符号代替文字。
+    var menuBarText: String {
+        switch kind {
+        case .lowBalance: return "⚠ " + symbol + AmountFormat.string(current)
+        case .bigBurn(let delta): return "↓" + symbol + AmountFormat.string(delta)
+        }
+    }
+
     var color: Color {
         switch kind {
         case .lowBalance: return Color(red: 1.00, green: 0.62, blue: 0.30)

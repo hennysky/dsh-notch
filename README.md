@@ -1,26 +1,53 @@
 # dsh-notch
 
-**v0.5** — 在 MacBook 刘海区显示 DeepSeek Harness 余额，额度异常时主动弹出提醒，
-卡片内可直接跳转充值。
+**v1.0** — 在 Mac 上随时看到 DeepSeek Harness 余额，额度异常时主动提醒。
 
-点击刘海展开卡片，再点收起。卡片内置动画参数与额度提醒设置。
+**所有 Mac 都能用**，自动选形态：
 
-| 余额页 | 额度提醒自动弹出 | 设置页 |
-|---|---|---|
-| ![余额](preview/balance.png) | ![提醒](preview/alert.png) | ![设置](preview/settings.png) |
+| 有刘海的 MacBook | 其它 Mac（Mac mini / iMac / 外接屏） |
+|---|---|
+| ![刘海形态](preview/balance.png) | ![菜单栏形态](preview/menubar.png) |
+| 点刘海展开卡片 | 菜单栏直接显示金额，点开是卡片 |
 
-> 上面两张图是应用自己离屏渲染出来的真实内容，不是设计稿。左图右上的滑杆图标进入右图。
-
-- 平台：macOS 13+（在 MacBook Pro 18,3 / macOS 27 上开发和验证）
-- 构建：`./build.sh`
-- 自检：`--panelcheck` / `--clicktest` / `--settingscheck` / `--selftest`，详见下文
+- 平台：macOS 14+，Apple Silicon
 - 协议：MIT，见 [LICENSE](LICENSE)
+- 自检：7 项，全部不依赖肉眼，见下文
+
+## 两种形态，运行时自动选
+
+**不在安装时问用户，也不需要问。** 显示配置随时会变，安装时写死一次之后全是错的：
+
+| 场景 | 形态 |
+|---|---|
+| MacBook 有刘海 | 刘海形态，放在那块屏上 |
+| Mac mini / iMac / 纯外接屏 | 菜单栏形态 |
+| MacBook 合盖接外屏（内置屏从 `NSScreen.screens` 消失） | **自动切到菜单栏形态，功能不丢** |
+| 用户手动指定 | 以手动为准（自动 / 仅刘海 / 仅菜单栏） |
+
+判定依据是 `NSScreen.auxiliaryTopLeftArea` 是否为 nil、`safeAreaInsets.top` 是否 > 0，
+并监听 `didChangeScreenParametersNotification` 随时重判。
+
+> **v0.5 及更早的版本有个设计错误**：在没有刘海的屏上会模拟一块假刘海，
+> 于是 Mac mini 用户屏幕顶上凭空多出一条黑条。1.0 把这条 fallback 删了——
+> 没有刘海就不该有「刘海形态」这个东西。
+
+### 菜单栏形态的提醒方式不同
+
+刘海形态靠「卡片自己弹出来」；菜单栏形态没有可弹的地方（popover 会抢焦点，
+正在打字的人会被打断）。所以改成**菜单栏标题临时变成提醒内容**：
+
+```
+¥5.74   →   ⚠ ¥5.74     （余额告急，橙色）
+¥5.74   →   ↓¥2.50      （单次大额消耗，蓝色）
+```
+
+停留设定时长后自动恢复。用户一旦点击菜单栏项，提醒立刻交还给他。
 
 ## 安装
 
 ### 下载预编译包（推荐）
 
-1. 下载 `DSHNotch-0.4.zip`：
+1. 下载 `DSHNotch-1.0.zip`：
    [GitHub Releases](https://github.com/hennysky/dsh-notch/releases) ·
    [Gitee 发行版](https://gitee.com/hennysky/dsh-notch/releases)
 2. 解压，把 `DSHNotch.app` 拖进「应用程序」
@@ -37,21 +64,21 @@
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v0.4/DSHNotch-0.4.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.0/DSHNotch-1.0.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
 
 # Gitee（国内更快）
 curl -fL -o /tmp/DSHNotch.zip \
-  https://gitee.com/hennysky/dsh-notch/releases/download/v0.4/DSHNotch-0.4.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v1.0/DSHNotch-1.0.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
 ```
 
-包信息：**arm64 / macOS 14.0+ / 180K**
-SHA256 `86f86e478e2610cc865548cb084d3ad606304886f3788d3837b8e66633d9a8fd`
+包信息：**arm64 / macOS 14.0+**
+
 
 **环境要求：Apple Silicon + macOS 14.0+**
 
@@ -243,8 +270,8 @@ open build/DSHNotch.app          # 启动（常驻，无 Dock 图标）
 - **折叠态（默认）**：**什么都不画**。刘海保持原样，窗口 = 刘海矩形左右各外扩 4pt
   （本机 193×32pt），不占用菜单栏以外的任何区域。外扩是为了覆盖窗口对齐 2x 像素网格的
   取整误差，也让 185×32pt 的窄目标更容易点中。
-- **点击刘海带** → 卡片从屏幕顶端向下展开成 300×218pt 的黑色卡片，顶部与刘海连成一体、
-  底部圆角。显示充值钱包余额、赠送钱包、累计消费、更新时间，右上角可手动刷新。
+- **点击刘海带** → 卡片从屏幕顶端向下展开成 300×256pt 的黑色卡片，顶部与刘海连成一体、
+  底部圆角。显示充值钱包余额、赠送钱包、累计消费、今日消耗、更新时间，右下角是充值入口。
 - **再点一次刘海带 / 点卡片外面** → 收起。收起后窗口缩回刘海那 193×32pt，不再画任何东西。
 - 状态色：≥¥10 绿 / ≥¥1 橙 / <¥1 红 / 查询失败灰。
 
@@ -312,9 +339,19 @@ model.objectWillChange
 但窗口里是空的。判断"到底显示了什么"必须看**内容本身**——
 `opaquePixelCount()` 数窗口的非透明像素，是唯一能自动化验证这件事的办法。
 
-## 动画参数（卡片内可调）
+## 设置
 
-卡片右上角的滑杆图标进入设置页：
+卡片右上角的滑杆图标进入设置页，分三页：
+
+| 页 | 内容 |
+|---|---|
+| **提醒** | 余额低于、单次消耗、弹出停留 |
+| **动画** | 动画时长、缓动曲线 |
+| **通用** | 呈现形态、开机自启 |
+
+改动即时生效，写入 `UserDefaults`（域 `local.dsh.notch`），重启后保留。
+
+### 动画参数
 
 - **动画时长** 0.1 – 1.5 秒（默认 0.45，原先用系统默认约 0.2 秒，偏快）
 - **缓动曲线** 平滑 / 缓出 / 缓入 / 线性
@@ -363,7 +400,8 @@ BIN=./build/DSHNotch.app/Contents/MacOS/DSHNotch
 
 $BIN --panelcheck   # 窗口落点 + 层级：是否真的落在刘海/卡片矩形上、是否高于菜单栏
 $BIN --clicktest    # 点击链路：折叠空白 → 点击出卡片 → 再点收起（含内容像素校验）
-$BIN --settingscheck # 动画参数的读写与持久化
+$BIN --settingscheck # 设置项读写与持久化
+$BIN --modecheck     # 形态判定：刘海/菜单栏/合盖/强制指定
 $BIN --alertcheck    # 额度提醒判定：8 种阈值情形
 $BIN --costcheck     # 今日消耗推算：跨天/隔天/异常值
 $BIN --render       # 离屏渲染余额页 → /tmp/dsh-notch-expanded.png
@@ -467,14 +505,32 @@ layer=0     DeepSeek Harness bounds=(0, 33, 1466, 949)
 
 ## 架构
 
+```
+        AppCoordinator            决定用哪种形态（运行时判定）
+              │
+        BalanceModel              余额 / 提醒 / 今日消耗 —— 与呈现无关
+              │
+      ┌───────┴────────┐
+ NotchPresenter    MenuBarPresenter
+ NSWindow          NSStatusItem + NSPopover
+      └───────┬────────┘
+        CardRootView             同一张卡片，只有 chrome 不同
+```
+
 | 文件 | 职责 |
 |---|---|
+| `Sources/AppCoordinator.swift` | 形态判定与切换、开机自启 |
+| `Sources/PresentationMode.swift` | 形态判定规则（纯函数，可自检） |
+| `Sources/BalanceModel.swift` | 状态机：轮询、失败保留旧值 |
+| `Sources/BalanceAlert.swift` | 提醒判定（纯函数）+ 提醒模型 |
+| `Sources/DailyCost.swift` | 今日消耗推算（纯函数）+ 展示 |
 | `Sources/Balance.swift` | 凭据读取、接口调用、数据模型 |
-| `Sources/BalanceModel.swift` | 状态机：轮询、失败保留旧值、状态分级 |
-| `Sources/NotchGeometry.swift` | 刘海几何计算（真刘海 / 无刘海屏模拟） |
-| `Sources/NotchController.swift` | 面板创建、展开收起、点击穿透 |
-| `Sources/Views.swift` | SwiftUI 视图（折叠胶囊 / 展开卡片） |
-| `Sources/main.swift` | 入口 + `--selftest` |
+| `Sources/NotchPresenter.swift` | 刘海形态：面板、点击、动画 |
+| `Sources/MenuBarPresenter.swift` | 菜单栏形态：状态栏项、popover、标题提醒 |
+| `Sources/NotchGeometry.swift` | 刘海几何（只在真有刘海时构造） |
+| `Sources/Views.swift` | 卡片视图 + 全部自绘控件 |
+| `Sources/Diagnostics.swift` | 日志、离屏渲染、窗口服务器查询 |
+| `Sources/main.swift` | 入口 + 7 项自检 |
 
 ### 取数链路
 
@@ -494,22 +550,23 @@ data.biz_data.normal_wallets / bonus_wallets / total_costs
 
 ## 已知限制
 
-1. **接口有频率限制**。开发期间实测触发过 HTTP 429，已单独处理并给出友好提示；
-   5 分钟轮询是安全的，不要调低。
+1. **接口有频率限制**。开发期间实测触发过 HTTP 429；5 分钟轮询是安全的，不要调低。
 2. **凭据来源是 DSH 内部文件**。`~/.dsh/.credentials.yaml` 的格式随 DSH 版本可能变化；
    解析失败会给出明确报错，不会静默显示错误金额。
-3. **刘海窗口层级未做视觉验证**：`.statusBar + 1` 层级、`canJoinAllSpaces`、
+3. **没有 Apple 签名与公证**。首次打开需要「右键 → 打开」，需要 $99/年才能免掉这一步。
+4. **开机自启未验证**（`SMAppService`）。未签名应用注册登录项可能被系统拒绝；
+   失败时设置项会退回系统实际状态，不会撒谎。以 README 里的手动方式为准。
+5. **全屏 / 多显示器下的窗口层级未做视觉验证**：`.statusBar + 1`、`canJoinAllSpaces`、
    `fullScreenAuxiliary` 的效果需要在全屏应用、多显示器场景下肉眼确认。
-4. 外接屏没有刘海时会在主屏顶部中央模拟一块 185×24 的区域。
-5. 折叠窗口（刘海那一小块）会接收点击。因为它是不抢焦点的面板，且菜单栏在刘海位置
-   本来就没有任何项目，实际影响应当为零——但这一条同样需要真机确认。
+6. **今日消耗是本地推算的**，平台没有按天维度；基线不可信时显示「统计中」或「≥¥x.xx」。
+7. **只构建 arm64**。带刘海的 MacBook 全是 Apple Silicon，工具链的运行库也只有 arm64 切片。
 
 ## 后续可做
 
 - 全屏 / 多显示器场景下的层级验证
-- 开机自启（`SMAppService`）
-- 余额变化时的高亮提示
-- 点击卡片打开 platform.deepseek.com 用量页
+- 更新检查
+- 消耗趋势折线（采样序列已经在攒了）
+- Apple Developer ID 签名与公证（$99/年）
 
 ---
 

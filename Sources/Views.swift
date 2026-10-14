@@ -1,6 +1,53 @@
 import AppKit
 import SwiftUI
 
+// MARK: - 卡片状态与外观
+
+/// 设置页的分页。设置项变多之后一屏放不下，分页比加高卡片好。
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case alerts, animation, general
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .alerts: return "提醒"
+        case .animation: return "动画"
+        case .general: return "通用"
+        }
+    }
+}
+
+/// 卡片的呈现形态。刘海形态顶部与屏幕齐平、顶角不圆；popover 形态四角统一圆角。
+enum CardChrome: Equatable {
+    case notch(topInset: CGFloat)
+    case popover
+
+    /// 卡片内容要往下让出的高度（刘海那一条）
+    var topInset: CGFloat {
+        switch self {
+        case .notch(let inset): return inset
+        case .popover: return 0
+        }
+    }
+}
+
+/// 卡片的一次性状态。放在呈现层而不是 SwiftUI 的 @State：
+/// SwiftUI 的观察者传播在这棵手工托管的视图树里不可靠，状态由外部显式驱动。
+struct CardState: Equatable {
+    var isExpanded = false
+    var showSettings = false
+    var settingsTab: SettingsTab = .alerts
+    var alert: BalanceAlert?
+}
+
+struct CardActions {
+    var toggleSettings: () -> Void = {}
+    var selectTab: (SettingsTab) -> Void = { _ in }
+    var topUp: () -> Void = {}
+    var quit: () -> Void = {}
+}
+
 /// 状态色
 extension BalanceModel.Level {
     var color: Color {
@@ -12,23 +59,31 @@ extension BalanceModel.Level {
         case .unknown: return Color(red: 0.45, green: 0.45, blue: 0.50)
         }
     }
+}
 
-    var label: String {
+private extension CardChrome {
+    /// 用 AnyShape 而不是 `some Shape`：分支返回不同类型，`some Shape` 装不下
+    /// （会退化成 _ConditionalContent，既不是 Shape 也没有 strokeBorder）。
+    var shape: AnyShape {
         switch self {
-        case .healthy: return "余额充足"
-        case .low: return "余额偏低"
-        case .critical: return "余额不足"
-        case .failed: return "查询失败"
-        case .unknown: return "读取中"
+        case .notch:
+            AnyShape(UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 18,
+                                            bottomTrailingRadius: 18, topTrailingRadius: 0,
+                                            style: .continuous))
+        case .popover:
+            AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 }
 
-/// 标题栏图标按钮。
-///
-/// 图标只有 ~11pt，命中区几乎等于图标本身，很难点中。
-/// 这里把可点区域扩到 26×26，图标视觉大小不变——只有 `.contentShape`
-/// 把整个 frame 变成命中区，才不是只有笔画本身可点。
+// MARK: - 自绘控件
+//
+// 一律不用 AppKit 支撑的控件（Slider / Toggle / Picker(.segmented)）：
+// 本项目没有屏幕录制权限，离屏渲染是唯一的视觉验证手段，而 ImageRenderer
+// 画不出 AppKit 控件（渲染出来是一块带禁止符号的黄条）。自绘才能验证到真实效果。
+
+/// 标题栏图标按钮。图标只有 ~11pt，命中区几乎等于笔画本身，
+/// 所以把可点区域扩到 26×26，视觉大小不变。
 private struct HeaderIconButton: View {
     let systemName: String
     let opacity: Double
@@ -39,259 +94,14 @@ private struct HeaderIconButton: View {
             Image(systemName: systemName)
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(.white.opacity(opacity))
-                .frame(width: Self.hitSize, height: Self.hitSize)
+                .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
-
-    static let hitSize: CGFloat = 26
 }
 
-/// 卡片外形：顶部与屏幕边缘齐平（与刘海连成一体），底部圆角。
-private var cardShape: UnevenRoundedRectangle {
-    UnevenRoundedRectangle(topLeadingRadius: 0,
-                           bottomLeadingRadius: 18,
-                           bottomTrailingRadius: 18,
-                           topTrailingRadius: 0,
-                           style: .continuous)
-}
-
-/// 展开态：点击刘海后向下展开的卡片。两页内容：余额 / 设置。
-struct ExpandedCard: View {
-    @ObservedObject var model: BalanceModel
-    @ObservedObject var settings: NotchSettings
-    let topInset: CGFloat
-    let showSettings: Bool
-    let alert: BalanceAlert?
-    let onToggleSettings: () -> Void
-    let onTopUp: () -> Void
-    let onQuit: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            if showSettings {
-                SettingsPage(settings: settings, onQuit: onQuit)
-                    .padding(.top, 10)
-            } else {
-                amount
-                Divider().overlay(Color.white.opacity(0.10)).padding(.vertical, 8)
-                detail(title: "赠送钱包", value: model.bonusText)
-                detail(title: "累计消费", value: model.costText)
-                detail(title: "今日消耗", value: model.todayCostText)
-            }
-            Spacer(minLength: 6)
-            footer
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, topInset + 10)
-        .padding(.bottom, 13)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background {
-            // 纯黑会在深色窗口上糊成一片，加一条极细描边把卡片边缘勾出来。
-            // 有提醒时描边换成提醒色，一眼能看出这次是它自己弹出来的。
-            cardShape
-                .fill(Color.black)
-                .overlay {
-                    cardShape.strokeBorder(alert?.color.opacity(0.75) ?? Color.white.opacity(0.10),
-                                           lineWidth: alert == nil ? 0.5 : 1)
-                }
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 6) {
-            Circle().fill(alert?.color ?? model.level.color).frame(width: 6, height: 6)
-            Text(showSettings ? "设置" : "DeepSeek Harness")
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
-            Spacer(minLength: 0)
-
-            HeaderIconButton(systemName: showSettings ? "chevron.left" : "slider.horizontal.3",
-                             opacity: showSettings ? 0.95 : 0.65,
-                             action: onToggleSettings)
-
-            if !showSettings {
-                HeaderIconButton(systemName: "arrow.clockwise",
-                                 opacity: model.isRefreshing ? 0.3 : 0.65) {
-                    Task { await model.refresh() }
-                }
-                .disabled(model.isRefreshing)
-            }
-        }
-    }
-
-    private var amount: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(model.amountText)
-                .font(.system(size: 27, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-                .opacity(model.isStale ? 0.6 : 1)
-            Text("充值钱包余额")
-                .font(.system(size: 9.5))
-                .foregroundStyle(.white.opacity(0.42))
-        }
-        .padding(.top, 10)
-    }
-
-    private func detail(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.white.opacity(0.48))
-            Spacer(minLength: 0)
-            Text(value)
-                .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.88))
-        }
-        .padding(.vertical, 3)
-    }
-
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if showSettings {
-                Text("展开动画与额度提醒，改动即时生效并记住。")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.white.opacity(0.30))
-            } else {
-                if let alert {
-                    HStack(spacing: 5) {
-                        Image(systemName: "bell.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(alert.color)
-                        Text(alert.title)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(alert.color)
-                    }
-                } else if let errorText = model.errorText {
-                    Text(errorText)
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(Color(red: 1.0, green: 0.5, blue: 0.45))
-                        .lineLimit(1)
-                }
-
-                HStack(spacing: 8) {
-                    Text(model.isStale && alert == nil ? "显示的是上次成功获取的数据" : model.updatedText)
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(.white.opacity(0.32))
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    topUpButton
-                }
-            }
-        }
-    }
-
-    /// 充值入口：打开平台充值页，沿用浏览器自己的登录态，不带任何授权信息。
-    private var topUpButton: some View {
-        Button(action: onTopUp) {
-            HStack(spacing: 2) {
-                Text("充值")
-                    .font(.system(size: 9.5, weight: .medium))
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 7.5, weight: .bold))
-            }
-            .foregroundStyle(.white.opacity(0.85))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(Color.white.opacity(0.13)))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// 设置页：展开动画 + 额度提醒
-struct SettingsPage: View {
-    @ObservedObject var settings: NotchSettings
-    let onQuit: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            row("动画时长", NotchSettings.duration(settings.animationDuration))
-            SettingSlider(value: $settings.animationDuration, range: NotchSettings.durationRange)
-
-            easingPicker
-
-            row("余额低于", NotchSettings.money(settings.lowBalanceThreshold))
-                .padding(.top, 9)
-            SettingSlider(value: $settings.lowBalanceThreshold,
-                          range: NotchSettings.lowBalanceRange, step: 1)
-
-            row("单次消耗", NotchSettings.money(settings.burnThreshold))
-                .padding(.top, 7)
-            SettingSlider(value: $settings.burnThreshold,
-                          range: NotchSettings.burnRange, step: 0.5)
-
-            row("弹出停留", NotchSettings.seconds(settings.alertDuration))
-                .padding(.top, 7)
-            SettingSlider(value: $settings.alertDuration,
-                          range: NotchSettings.alertDurationRange, step: 1)
-
-            HStack(spacing: 12) {
-                Button("恢复默认") { settings.reset() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(settings.isDefault ? 0.25 : 0.7))
-                    .disabled(settings.isDefault)
-
-                Spacer(minLength: 0)
-
-                // 没有这个按钮，用户只能去活动监视器里杀进程
-                Button("退出应用") { onQuit() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.5).opacity(0.85))
-            }
-            .padding(.top, 7)
-        }
-    }
-
-    private func row(_ title: String, _ value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.white.opacity(0.48))
-            Spacer(minLength: 0)
-            Text(value)
-                .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.88))
-        }
-    }
-
-    /// 自绘分段控件，不用 Picker(.segmented)：
-    /// AppKit 支撑的控件在离屏渲染里只能画出占位符，
-    /// 而本项目没有屏幕录制权限、只能靠离屏渲染自查，自绘才能验证到真实效果。
-    private var easingPicker: some View {
-        HStack(spacing: 4) {
-            ForEach(NotchSettings.Easing.allCases) { easing in
-                let selected = settings.easing == easing
-                Button {
-                    settings.easing = easing
-                } label: {
-                    Text(easing.label)
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(selected ? Color.black.opacity(0.85) : Color.white.opacity(0.7))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 3.5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(selected ? Color.white.opacity(0.88) : Color.white.opacity(0.10))
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.top, 4)
-    }
-}
-
-/// 自绘滑杆。
-///
-/// 不用 SwiftUI 的 `Slider`：部署目标降到 macOS 14 之后它退回成 AppKit 的
-/// `NSSlider`，而 `ImageRenderer` 画不出 AppKit 控件（渲染出来是一块带禁止符号的
-/// 黄条）。本项目没有屏幕录制权限、只能靠离屏渲染自查，自绘才能验证到真实效果——
-/// 分段控件当初也是因为同一个原因自绘的。
+/// 滑杆：Capsule 轨道 + Circle 旋钮 + 拖拽手势，点轨道也能跳过去。
 private struct SettingSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -332,37 +142,328 @@ private struct SettingSlider: View {
     }
 }
 
-/// 根视图。折叠态什么都不画——刘海保持原样，点击它才展开。
-///
-/// `isExpanded` 由控制器显式传入，不在这里读 `model.isExpanded`：
-/// `@Published` 是在 willSet 阶段发布的，在它的订阅回调里求值会读到旧值，
-/// 导致内容永远慢一拍（实测：点开后窗口是空的，再点一次才画出上一状态）。
-struct NotchRootView: View {
+/// 开关：自绘胶囊 + 圆点
+private struct SettingToggle: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button { isOn.toggle() } label: {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? Color.white.opacity(0.88) : Color.white.opacity(0.16))
+                    .frame(width: 30, height: 17)
+                Circle()
+                    .fill(isOn ? Color.black.opacity(0.85) : Color.white.opacity(0.65))
+                    .frame(width: 13, height: 13)
+                    .padding(.horizontal, 2)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// 分段控件
+private struct SegmentedRow<T: Hashable & Identifiable>: View {
+    let options: [T]
+    let label: (T) -> String
+    let selected: T
+    let onSelect: (T) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(options) { option in
+                let isSelected = option == selected
+                Button { onSelect(option) } label: {
+                    Text(label(option))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(isSelected ? Color.black.opacity(0.85) : Color.white.opacity(0.7))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 3.5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(isSelected ? Color.white.opacity(0.88) : Color.white.opacity(0.10))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+private struct SettingRow: View {
+    let title: String
+    var value: String?
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.white.opacity(0.48))
+            Spacer(minLength: 0)
+            if let value {
+                Text(value)
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.88))
+            }
+        }
+    }
+}
+
+// MARK: - 卡片
+
+/// 余额卡片。刘海形态与菜单栏 popover 形态共用同一份实现，只有 chrome 不同。
+struct BalanceCard: View {
     @ObservedObject var model: BalanceModel
     @ObservedObject var settings: NotchSettings
-    let geometry: NotchGeometry
-    let isExpanded: Bool
-    let showSettings: Bool
-    let alert: BalanceAlert?
-    let onToggleSettings: () -> Void
-    let onTopUp: () -> Void
-    let onQuit: () -> Void
+    let chrome: CardChrome
+    let state: CardState
+    let actions: CardActions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if state.showSettings {
+                settingsBody
+            } else {
+                balanceBody
+            }
+            Spacer(minLength: 6)
+            footer
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, chrome.topInset + 10)
+        .padding(.bottom, 13)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            // 纯黑会在深色窗口上糊成一片，加一条极细描边把卡片边缘勾出来。
+            // 有提醒时描边换成提醒色，一眼能看出这次是它自己弹出来的。
+            chrome.shape
+                .fill(Color.black)
+                .overlay {
+                    chrome.shape.stroke(state.alert?.color.opacity(0.75) ?? Color.white.opacity(0.10),
+                                        lineWidth: state.alert == nil ? 0.5 : 1)
+                }
+        }
+    }
+
+    // MARK: 头部
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(state.alert?.color ?? model.level.color)
+                .frame(width: 6, height: 6)
+            Text(state.showSettings ? "设置" : "DeepSeek Harness")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer(minLength: 0)
+
+            HeaderIconButton(systemName: state.showSettings ? "chevron.left" : "slider.horizontal.3",
+                             opacity: state.showSettings ? 0.95 : 0.65,
+                             action: actions.toggleSettings)
+
+            if !state.showSettings {
+                HeaderIconButton(systemName: "arrow.clockwise",
+                                 opacity: model.isRefreshing ? 0.3 : 0.65) {
+                    Task { await model.refresh() }
+                }
+                .disabled(model.isRefreshing)
+            }
+        }
+    }
+
+    // MARK: 余额页
+
+    private var balanceBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.amountText)
+                    .font(.system(size: 27, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .opacity(model.isStale ? 0.6 : 1)
+                Text("充值钱包余额")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.white.opacity(0.42))
+            }
+            .padding(.top, 10)
+
+            Divider().overlay(Color.white.opacity(0.10)).padding(.vertical, 8)
+
+            detail("赠送钱包", model.bonusText)
+            detail("累计消费", model.costText)
+            detail("今日消耗", model.todayCostText)
+        }
+    }
+
+    private func detail(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.white.opacity(0.48))
+            Spacer(minLength: 0)
+            Text(value)
+                .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.88))
+        }
+        .padding(.vertical, 3)
+    }
+
+    // MARK: 设置页
+
+    private var settingsBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SegmentedRow(options: SettingsTab.allCases,
+                         label: { $0.label },
+                         selected: state.settingsTab,
+                         onSelect: actions.selectTab)
+                .padding(.top, 8)
+
+            Group {
+                switch state.settingsTab {
+                case .alerts:
+                    alertsTab
+                case .animation:
+                    animationTab
+                case .general:
+                    generalTab
+                }
+            }
+            .padding(.top, 12)
+        }
+    }
+
+    private var alertsTab: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingRow(title: "余额低于", value: NotchSettings.money(settings.lowBalanceThreshold))
+            SettingSlider(value: $settings.lowBalanceThreshold,
+                          range: NotchSettings.lowBalanceRange, step: 1)
+            SettingRow(title: "单次消耗", value: NotchSettings.money(settings.burnThreshold))
+                .padding(.top, 8)
+            SettingSlider(value: $settings.burnThreshold,
+                          range: NotchSettings.burnRange, step: 0.5)
+            SettingRow(title: "弹出停留", value: NotchSettings.seconds(settings.alertDuration))
+                .padding(.top, 8)
+            SettingSlider(value: $settings.alertDuration,
+                          range: NotchSettings.alertDurationRange, step: 1)
+        }
+    }
+
+    private var animationTab: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingRow(title: "动画时长", value: NotchSettings.duration(settings.animationDuration))
+            SettingSlider(value: $settings.animationDuration, range: NotchSettings.durationRange)
+            SettingRow(title: "缓动曲线").padding(.top, 12)
+            SegmentedRow(options: NotchSettings.Easing.allCases,
+                         label: { $0.label },
+                         selected: settings.easing,
+                         onSelect: { settings.easing = $0 })
+                .padding(.top, 4)
+        }
+    }
+
+    private var generalTab: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingRow(title: "呈现形态").padding(.bottom, 4)
+            SegmentedRow(options: NotchSettings.Presentation.allCases,
+                         label: { $0.label },
+                         selected: settings.presentation,
+                         onSelect: { settings.presentation = $0 })
+            HStack {
+                Text("开机自启")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.white.opacity(0.48))
+                Spacer(minLength: 0)
+                SettingToggle(isOn: $settings.launchAtLogin)
+            }
+            .padding(.top, 12)
+            Text("「自动」会用刘海形态（有刘海屏时），否则用菜单栏形态。切换显示器后自动重判。")
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.28))
+                .padding(.top, 12)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: 底部
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if state.showSettings {
+                HStack(spacing: 12) {
+                    Button("恢复默认") { settings.reset() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(settings.isDefault ? 0.25 : 0.7))
+                        .disabled(settings.isDefault)
+                    Spacer(minLength: 0)
+                    Button("退出应用") { actions.quit() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.5).opacity(0.85))
+                }
+            } else {
+                if let alert = state.alert {
+                    HStack(spacing: 5) {
+                        Image(systemName: "bell.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(alert.color)
+                        Text(alert.title)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(alert.color)
+                    }
+                } else if let errorText = model.errorText {
+                    Text(errorText)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Color(red: 1.0, green: 0.5, blue: 0.45))
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 8) {
+                    Text(model.isStale && state.alert == nil ? "显示的是上次成功获取的数据" : model.updatedText)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.white.opacity(0.32))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    topUpButton
+                }
+            }
+        }
+    }
+
+    private var topUpButton: some View {
+        Button(action: actions.topUp) {
+            HStack(spacing: 2) {
+                Text("充值")
+                    .font(.system(size: 9.5, weight: .medium))
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 7.5, weight: .bold))
+            }
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.white.opacity(0.13)))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// 根视图。折叠态什么都不画——刘海保持原样，点击它才展开。
+struct CardRootView: View {
+    @ObservedObject var model: BalanceModel
+    @ObservedObject var settings: NotchSettings
+    let chrome: CardChrome
+    let state: CardState
+    let actions: CardActions
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.clear
-            if isExpanded {
-                ExpandedCard(model: model,
-                             settings: settings,
-                             topInset: geometry.notch.height,
-                             showSettings: showSettings,
-                             alert: alert,
-                             onToggleSettings: onToggleSettings,
-                             onTopUp: onTopUp,
-                             onQuit: onQuit)
+            if state.isExpanded {
+                BalanceCard(model: model, settings: settings,
+                            chrome: chrome, state: state, actions: actions)
             }
         }
-        .ignoresSafeArea()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }

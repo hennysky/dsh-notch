@@ -8,6 +8,8 @@
 	<string>DSH Notch</string>
 	<key>CFBundleExecutable</key>
 	<string>DSHNotch</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>local.dsh.notch</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -17,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5</string>
+	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>

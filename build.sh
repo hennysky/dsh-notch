@@ -17,6 +17,7 @@ echo "编译 ${#SOURCES[@]} 个源文件 → $APP"
 dsh_swiftc -O "${SOURCES[@]}" -o "$CONTENTS/MacOS/DSHNotch"
 
 cp "$HERE/Resources/Info.plist" "$CONTENTS/Info.plist"
+cp "$HERE/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 printf 'APPL????' > "$CONTENTS/PkgInfo"
 
 # ad-hoc 签名：本机运行足够，不需要开发者证书

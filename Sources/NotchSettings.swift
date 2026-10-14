@@ -30,6 +30,21 @@ final class NotchSettings: ObservableObject {
         }
     }
 
+    /// 呈现形态。自动 = 有刘海屏用刘海，没有就用菜单栏。
+    enum Presentation: String, CaseIterable, Identifiable {
+        case automatic, notch, menuBar
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .automatic: return "自动"
+            case .notch: return "刘海"
+            case .menuBar: return "菜单栏"
+            }
+        }
+    }
+
     static let durationRange: ClosedRange<Double> = 0.1...1.5
     static let defaultDuration: Double = 0.45
     static let defaultEasing: Easing = .smooth
@@ -49,6 +64,8 @@ final class NotchSettings: ObservableObject {
     @Published var lowBalanceThreshold: Double { didSet { persist() } }
     @Published var burnThreshold: Double { didSet { persist() } }
     @Published var alertDuration: Double { didSet { persist() } }
+    @Published var presentation: Presentation { didSet { persist() } }
+    @Published var launchAtLogin: Bool { didSet { persist() } }
 
     private enum Key {
         static let duration = "dshNotch.animationDuration"
@@ -56,6 +73,8 @@ final class NotchSettings: ObservableObject {
         static let lowBalance = "dshNotch.lowBalanceThreshold"
         static let burn = "dshNotch.burnThreshold"
         static let alertDuration = "dshNotch.alertDuration"
+        static let presentation = "dshNotch.presentation"
+        static let launchAtLogin = "dshNotch.launchAtLogin"
     }
 
     init() {
@@ -70,6 +89,8 @@ final class NotchSettings: ObservableObject {
                                     fallback: Self.defaultBurn, range: Self.burnRange)
         alertDuration = Self.stored(defaults, Key.alertDuration,
                                     fallback: Self.defaultAlertDuration, range: Self.alertDurationRange)
+        presentation = Presentation(rawValue: defaults.string(forKey: Key.presentation) ?? "") ?? .automatic
+        launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
     }
 
     private static func stored(_ defaults: UserDefaults, _ key: String,
@@ -84,6 +105,8 @@ final class NotchSettings: ObservableObject {
             && abs(lowBalanceThreshold - Self.defaultLowBalance) < 0.001
             && abs(burnThreshold - Self.defaultBurn) < 0.001
             && abs(alertDuration - Self.defaultAlertDuration) < 0.001
+            && presentation == .automatic
+            && !launchAtLogin
     }
 
     func reset() {
@@ -92,6 +115,7 @@ final class NotchSettings: ObservableObject {
         lowBalanceThreshold = Self.defaultLowBalance
         burnThreshold = Self.defaultBurn
         alertDuration = Self.defaultAlertDuration
+        presentation = .automatic
     }
 
     private func persist() {
@@ -101,6 +125,8 @@ final class NotchSettings: ObservableObject {
         defaults.set(lowBalanceThreshold, forKey: Key.lowBalance)
         defaults.set(burnThreshold, forKey: Key.burn)
         defaults.set(alertDuration, forKey: Key.alertDuration)
+        defaults.set(presentation.rawValue, forKey: Key.presentation)
+        defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
     }
 
     // MARK: - 展示
