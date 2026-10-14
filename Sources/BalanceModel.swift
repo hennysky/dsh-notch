@@ -77,11 +77,18 @@ final class BalanceModel: ObservableObject {
         return origin.appendingPathComponent("top_up")
     }
 
+    /// 今日消耗文案。
+    ///
+    /// 基线不可信时（首次运行、或隔了多天才开应用）只显示「≥ 值」或「统计中」，
+    /// 不能显示成 ¥0.00 —— 那是把「不知道」伪装成「没消耗」。
     var todayCostText: String {
         guard let todayCost else { return "—" }
         let symbol = snapshot?.costs.first.map { AmountFormat.symbol(for: $0.currency) } ?? "¥"
-        return symbol + AmountFormat.string(todayCost)
+        return DailyCostDisplay.text(amount: todayCost, symbol: symbol, certain: costState.baselineCertain)
     }
+
+    /// 今日消耗是否为精确值（供界面加脚注）
+    var todayCostIsExact: Bool { costState.baselineCertain }
 
     private func evaluateAlert(_ fresh: BalanceSnapshot) {
         guard let wallet = fresh.primary else { return }
@@ -94,7 +101,8 @@ final class BalanceModel: ObservableObject {
     }
 
     /// 仅供 `--render` 离屏预览使用：注入一份假快照，不发起网络请求。
-    func injectPreview(normal: String, bonus: String, cost: String, today: String = "2.63") {
+    func injectPreview(normal: String, bonus: String, cost: String,
+                       today: String = "2.63", todayCertain: Bool = true) {
         snapshot = BalanceSnapshot(
             normal: [Wallet(currency: "CNY", balance: LooseString(normal))],
             bonus: [Wallet(currency: "CNY", balance: LooseString(bonus))],
@@ -103,6 +111,9 @@ final class BalanceModel: ObservableObject {
             origin: URL(string: "https://platform.deepseek.com")!
         )
         todayCost = Decimal(string: today)
+        let key = DailyCost.dayKey(for: Date())
+        costState = DailyCostState(dayKey: key, baseline: 0, lastCost: 0,
+                                   lastCostDayKey: key, baselineCertain: todayCertain)
     }
 
     // MARK: - 展示

@@ -167,6 +167,20 @@ enum DSHCredentials {
     }
 }
 
+/// 把 JSON 响应的字段路径摊平，用于确认平台到底提供了哪些字段。
+/// DSH_NOTCH_DEBUG=1 时打进日志——排查「平台有没有按天维度」只能靠它。
+func jsonFieldPaths(_ value: Any, path: String = "") -> [String] {
+    if let dict = value as? [String: Any] {
+        return dict.flatMap { key, nested in
+            jsonFieldPaths(nested, path: path.isEmpty ? key : "\(path).\(key)")
+        }.sorted()
+    }
+    if let array = value as? [Any], let first = array.first {
+        return jsonFieldPaths(first, path: path + "[]")
+    }
+    return [path]
+}
+
 // MARK: - 接口调用
 
 enum BalanceError: LocalizedError {
@@ -241,6 +255,10 @@ struct BalanceClient {
 
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw BalanceError.http(http.statusCode)
+        }
+
+        if let raw = try? JSONSerialization.jsonObject(with: data) {
+            dshLog("响应字段: " + jsonFieldPaths(raw).joined(separator: ", "))
         }
 
         let envelope: Envelope

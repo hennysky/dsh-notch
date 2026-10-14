@@ -13,6 +13,10 @@ struct DailyCostState: Codable, Equatable {
     var lastCost: Decimal = 0
     /// 最近一次读数所属日期
     var lastCostDayKey: String = ""
+    /// 当日基线是否可信。
+    /// false 表示当天起点的累计值无从得知（首次运行、或隔了多天才开），
+    /// 此时今日消耗只能算「至少这么多」，不能当成精确值展示。
+    var baselineCertain: Bool = false
 }
 
 /// 纯逻辑，便于 `--costcheck` 自检。
@@ -35,7 +39,15 @@ enum DailyCost {
 
         if state.dayKey != today {
             next.dayKey = today
-            next.baseline = (state.lastCostDayKey == yesterday) ? state.lastCost : cost
+            if state.lastCostDayKey == yesterday {
+                // 昨天有读数，这就是最接近午夜的真实基线
+                next.baseline = state.lastCost
+                next.baselineCertain = true
+            } else {
+                // 无从得知当天起点，只能用当前读数兜底 —— 会少算，标记为不可信
+                next.baseline = cost
+                next.baselineCertain = false
+            }
         }
 
         next.lastCost = cost
@@ -43,6 +55,17 @@ enum DailyCost {
 
         let spent = cost - next.baseline
         return (spent < 0 ? 0 : spent, next)
+    }
+}
+
+/// 今日消耗的展示文案。抽成纯函数，好让「不可信时不许显示成 ¥0.00」这条被自检守住。
+enum DailyCostDisplay {
+    static func text(amount: Decimal, symbol: String, certain: Bool) -> String {
+        guard certain else {
+            // 不知道 ≠ 没消耗。显示下限或「统计中」，不伪装成精确的 0。
+            return amount <= 0 ? "统计中" : "≥" + symbol + AmountFormat.string(amount)
+        }
+        return symbol + AmountFormat.string(amount)
     }
 }
 

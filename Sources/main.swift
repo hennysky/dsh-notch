@@ -54,7 +54,9 @@ func runRenderCheck() -> Int32 {
         : "25.9813852200000000"
     model.injectPreview(normal: previewBalance,
                         bonus: "0",
-                        cost: "540.1513852200000000")
+                        cost: "555.1113852200000000",
+                        today: CommandLine.arguments.contains("--render-unknown") ? "0" : "2.63",
+                        todayCertain: !CommandLine.arguments.contains("--render-unknown"))
     model.isExpanded = true
 
     guard let geometry = NotchGeometryResolver.resolve() else {
@@ -91,7 +93,8 @@ func runRenderCheck() -> Int32 {
     }
 
     let name: String
-    if showAlert { name = "dsh-notch-alert.png" }
+    if CommandLine.arguments.contains("--render-unknown") { name = "dsh-notch-unknown.png" }
+    else if showAlert { name = "dsh-notch-alert.png" }
     else if showSettings { name = "dsh-notch-settings.png" }
     else { name = "dsh-notch-expanded.png" }
     let out = URL(fileURLWithPath: "/tmp/" + name)
@@ -431,8 +434,32 @@ func runCostCheck() -> Int32 {
     check("连续两天各自独立统计", day1 == 3 && day2 == 4,
           "10-20 消耗 \(day1)，10-21 消耗 \(day2)")
 
+    // 7. 基线可信性：昨天有读数才算得到精确的当天起点
+    result = DailyCost.update(DailyCostState(dayKey: "2026-10-14", baseline: 500,
+                                             lastCost: 502.5, lastCostDayKey: "2026-10-14",
+                                             baselineCertain: true),
+                              cost: 505, today: "2026-10-15", yesterday: "2026-10-14")
+    check("跨天且昨天有读数 → 基线可信", result.state.baselineCertain,
+          "baselineCertain=\(result.state.baselineCertain)")
+
+    let staleState = DailyCostState(dayKey: "2026-10-10", baseline: 480, lastCost: 490,
+                                    lastCostDayKey: "2026-10-10", baselineCertain: true)
+    result = DailyCost.update(staleState, cost: 505, today: "2026-10-15", yesterday: "2026-10-14")
+    check("隔了几天没开 → 基线不可信", !result.state.baselineCertain,
+          "baselineCertain=\(result.state.baselineCertain)")
+
+    // 8. 展示：不可信时不许伪装成精确的 ¥0.00
+    let unknown = DailyCostDisplay.text(amount: 0, symbol: "¥", certain: false)
+    check("基线不可信且为 0 → 显示「统计中」而非 ¥0.00", unknown == "统计中",
+          "显示：\(unknown)")
+    let lowerBound = DailyCostDisplay.text(amount: Decimal(2.5), symbol: "¥", certain: false)
+    check("基线不可信但有增量 → 显示下限「≥¥2.50」", lowerBound == "≥¥2.50",
+          "显示：\(lowerBound)")
+    let exact = DailyCostDisplay.text(amount: Decimal(2.5), symbol: "¥", certain: true)
+    check("基线可信 → 显示精确值", exact == "¥2.50", "显示：\(exact)")
+
     print("")
-    print(failed == 0 ? "今日消耗推算全部通过" : "\(failed) 项失败")
+    print(failed == 0 ? "今日消耗推算与展示全部通过" : "\(failed) 项失败")
     return failed == 0 ? 0 : 1
 }
 
