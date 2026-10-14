@@ -20,7 +20,9 @@
 
 ### 下载预编译包（推荐）
 
-1. 从 [Releases](https://github.com/hennysky/dsh-notch/releases) 下载 `DSHNotch-0.4.zip`
+1. 下载 `DSHNotch-0.4.zip`：
+   [GitHub Releases](https://github.com/hennysky/dsh-notch/releases) ·
+   [Gitee 发行版](https://gitee.com/hennysky/dsh-notch/releases)
 2. 解压，把 `DSHNotch.app` 拖进「应用程序」
 3. **首次打开必须右键 → 打开**。应用没有 Apple 开发者签名与公证，双击会被 Gatekeeper 拦下
 
@@ -30,15 +32,26 @@
    xattr -dr com.apple.quarantine /Applications/DSHNotch.app
    ```
 
-下载 + 安装 + 去隔离 + 启动，一条龙：
+下载 + 安装 + 去隔离 + 启动，一条龙（两个平台的包逐字节相同，任选）：
 
 ```bash
+# GitHub
 curl -fL -o /tmp/DSHNotch.zip \
   https://github.com/hennysky/dsh-notch/releases/download/v0.4/DSHNotch-0.4.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
+
+# Gitee（国内更快）
+curl -fL -o /tmp/DSHNotch.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v0.4/DSHNotch-0.4.zip \
+  && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
+  && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
+  && open /Applications/DSHNotch.app
 ```
+
+包信息：**arm64 / macOS 14.0+ / 180K**
+SHA256 `86f86e478e2610cc865548cb084d3ad606304886f3788d3837b8e66633d9a8fd`
 
 **环境要求：Apple Silicon + macOS 14.0+**
 
