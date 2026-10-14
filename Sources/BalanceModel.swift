@@ -14,8 +14,17 @@ final class BalanceModel: ObservableObject {
     /// 轮询间隔：5 分钟。DSH 自身超时为 30s，不需要更频繁地打接口。
     let refreshInterval: TimeInterval = 300
 
+    /// 触发额度提醒时的回调。控制器负责弹出卡片并定时收起。
+    var onAlert: ((BalanceAlert) -> Void)?
+
+    private let settings: NotchSettings
     private let client = BalanceClient()
     private var pollTask: Task<Void, Never>?
+    private var detector = AlertDetector()
+
+    init(settings: NotchSettings) {
+        self.settings = settings
+    }
 
     func start() {
         guard pollTask == nil else { return }
@@ -38,11 +47,23 @@ final class BalanceModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         do {
-            snapshot = try await client.fetch()
+            let fresh = try await client.fetch()
+            snapshot = fresh
             errorText = nil
+            evaluateAlert(fresh)
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    private func evaluateAlert(_ fresh: BalanceSnapshot) {
+        guard let wallet = fresh.primary else { return }
+        let alert = detector.evaluate(current: wallet.amount,
+                                      symbol: wallet.symbol,
+                                      lowThreshold: settings.lowBalanceThreshold,
+                                      burnThreshold: settings.burnThreshold,
+                                      at: fresh.fetchedAt)
+        if let alert { onAlert?(alert) }
     }
 
     /// 仅供 `--render` 离屏预览使用：注入一份假快照，不发起网络请求。

@@ -45,25 +45,35 @@ func runSelfTest() -> Int32 {
 
 @MainActor
 func runRenderCheck() -> Int32 {
-    let model = BalanceModel()
-    model.injectPreview(normal: "25.9813852200000000",
+    let settings = NotchSettings()
+    let model = BalanceModel(settings: settings)
+    // 提醒态用低余额做夹具，否则画面自相矛盾（余额充足却提示低于阈值）
+    let previewBalance = CommandLine.arguments.contains("--render-alert")
+        ? "8.4200000000000000"
+        : "25.9813852200000000"
+    model.injectPreview(normal: previewBalance,
                         bonus: "0",
                         cost: "540.1513852200000000")
     model.isExpanded = true
-    let settings = NotchSettings()
 
     guard let geometry = NotchGeometryResolver.resolve() else {
         print("✗ 取不到屏幕几何")
         return 1
     }
 
+    let showSettings = CommandLine.arguments.contains("--render-settings")
+    let showAlert = CommandLine.arguments.contains("--render-alert")
     let size = NSSize(width: NotchGeometry.expandedWidth,
-                      height: geometry.notch.height + NotchGeometry.expandedCardHeight)
+                      height: geometry.notch.height + geometry.cardHeight(showSettings: showSettings))
+    let alert = showAlert
+        ? BalanceAlert(kind: .lowBalance(threshold: 10), symbol: "¥", current: 8.42, at: Date())
+        : nil
     let view = NotchRootView(model: model,
                              settings: settings,
                              geometry: geometry,
                              isExpanded: true,
-                             showSettings: CommandLine.arguments.contains("--render-settings"),
+                             showSettings: showSettings,
+                             alert: alert,
                              onToggleSettings: {})
         .frame(width: size.width, height: size.height)
 
@@ -78,7 +88,10 @@ func runRenderCheck() -> Int32 {
         return 1
     }
 
-    let name = CommandLine.arguments.contains("--render-settings") ? "dsh-notch-settings.png" : "dsh-notch-expanded.png"
+    let name: String
+    if showAlert { name = "dsh-notch-alert.png" }
+    else if showSettings { name = "dsh-notch-settings.png" }
+    else { name = "dsh-notch-expanded.png" }
     let out = URL(fileURLWithPath: "/tmp/" + name)
     do { try png.write(to: out) } catch {
         print("✗ 写入失败：\(error.localizedDescription)")
@@ -116,7 +129,8 @@ func runPanelCheck() -> Int32 {
     }
 
     for (name, target) in [("折叠（刘海矩形）", geometry.collapsedFrame),
-                           ("展开（卡片矩形）", geometry.expandedFrame)] {
+                           ("展开·余额页", geometry.expandedFrame(showSettings: false)),
+                           ("展开·设置页", geometry.expandedFrame(showSettings: true))] {
         panel.setFrame(target, display: false)
         let actual = panel.frame
         let ok = same(actual, target)
@@ -290,6 +304,73 @@ func appVersion() -> String {
     return "\(short) (build \(build))"
 }
 
+// MARK: - 额度提醒自检
+//
+// 提醒的判定必须能自动验证：什么时候该响、什么时候不该重复响，
+// 靠肉眼盯着余额掉是验不出来的。
+
+@MainActor
+func runAlertCheck() -> Int32 {
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String) {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+
+    let now = Date()
+
+    // 1. 首次查询没有参照，不判定消耗
+    var detector = AlertDetector()
+    var alert = detector.evaluate(current: 20, symbol: "¥", lowThreshold: 0, burnThreshold: 2, at: now)
+    check("首次查询不触发消耗提醒", alert == nil,
+          alert.map { "误报：\($0.title)" } ?? "无提醒")
+
+    // 2. 消耗达到阈值
+    alert = detector.evaluate(current: 17.5, symbol: "¥", lowThreshold: 0, burnThreshold: 2, at: now)
+    check("消耗 ¥2.50 ≥ 阈值 ¥2 → 提醒", alert?.kind == .bigBurn(delta: Decimal(2.5)),
+          alert.map { "触发：\($0.title)" } ?? "未触发")
+
+    // 3. 消耗未达阈值
+    alert = detector.evaluate(current: 16.5, symbol: "¥", lowThreshold: 0, burnThreshold: 2, at: now)
+    check("消耗 ¥1.00 < 阈值 ¥2 → 不提醒", alert == nil,
+          alert.map { "误报：\($0.title)" } ?? "无提醒")
+
+    // 4. 余额跌破阈值
+    detector = AlertDetector()
+    alert = detector.evaluate(current: 9, symbol: "¥", lowThreshold: 10, burnThreshold: 0, at: now)
+    check("余额 ¥9 跌破 ¥10 → 提醒", alert?.kind == .lowBalance(threshold: 10),
+          alert.map { "触发：\($0.title)" } ?? "未触发")
+
+    // 5. 持续低于阈值时不重复响
+    alert = detector.evaluate(current: 8, symbol: "¥", lowThreshold: 10, burnThreshold: 0, at: now)
+    check("仍低于阈值 → 不重复提醒", alert == nil,
+          alert.map { "重复响了：\($0.title)" } ?? "未重复")
+
+    // 6. 充回阈值之上后重新武装
+    _ = detector.evaluate(current: 30, symbol: "¥", lowThreshold: 10, burnThreshold: 0, at: now)
+    alert = detector.evaluate(current: 9, symbol: "¥", lowThreshold: 10, burnThreshold: 0, at: now)
+    check("充值后再次跌破 → 重新提醒", alert?.kind == .lowBalance(threshold: 10),
+          alert.map { "触发：\($0.title)" } ?? "未触发")
+
+    // 7. 阈值 0 = 关闭
+    detector = AlertDetector()
+    alert = detector.evaluate(current: 1, symbol: "¥", lowThreshold: 0, burnThreshold: 0, at: now)
+    check("阈值设为 0 → 该规则关闭", alert == nil,
+          alert.map { "误报：\($0.title)" } ?? "无提醒")
+
+    // 8. 两条同时命中时优先余额告急
+    detector = AlertDetector()
+    _ = detector.evaluate(current: 20, symbol: "¥", lowThreshold: 15, burnThreshold: 2, at: now)
+    alert = detector.evaluate(current: 12, symbol: "¥", lowThreshold: 15, burnThreshold: 2, at: now)
+    check("同时命中 → 优先余额告急", alert?.kind == .lowBalance(threshold: 15),
+          alert.map { "触发：\($0.title)" } ?? "未触发")
+
+    print("")
+    print(failed == 0 ? "提醒判定全部通过" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
 // MARK: - 入口
 
 if CommandLine.arguments.contains("--version") {
@@ -311,6 +392,10 @@ if CommandLine.arguments.contains("--panelcheck") {
 
 if CommandLine.arguments.contains("--clicktest") {
     exit(MainActor.assumeIsolated { runClickTest() })
+}
+
+if CommandLine.arguments.contains("--alertcheck") {
+    exit(MainActor.assumeIsolated { runAlertCheck() })
 }
 
 if CommandLine.arguments.contains("--settingscheck") {

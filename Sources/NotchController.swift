@@ -122,8 +122,9 @@ func windowServerReport(pid: pid_t) -> String {
 
 @MainActor
 final class NotchController {
-    let model = BalanceModel()
     let settings = NotchSettings()
+    /// 依赖 settings，所以用 lazy
+    lazy var model = BalanceModel(settings: settings)
 
     private var panel: NotchPanel?
     private var host: ClickHostingView<NotchRootView>?
@@ -131,6 +132,10 @@ final class NotchController {
     private var cancellables = Set<AnyCancellable>()
     private var clickOutsideMonitor: Any?
     private var showSettings = false
+    /// 正在展示的提醒。非 nil 时卡片上会显示提醒文案。
+    private var pendingAlert: BalanceAlert?
+    /// 提醒卡片的自动收起任务
+    private var alertCollapseWork: DispatchWorkItem?
     /// 内容的展开状态，故意滞后于窗口状态：
     /// 展开时立刻置 true（让窗口把卡片「拉」出来），
     /// 收起时要等动画走完才置 false，否则卡片会在动画一开始就消失，看不到收起过程。
@@ -139,7 +144,9 @@ final class NotchController {
     deinit { dshLog("!!! NotchController deinit") }
 
     func start() {
-        dshLog("start() 动画 \(settings.animationDuration)s / \(settings.easing.rawValue)")
+        dshLog("start() 动画 \(settings.animationDuration)s / \(settings.easing.rawValue)"
+               + " 提醒 余额<\(settings.lowBalanceThreshold)/消耗>\(settings.burnThreshold) 停留\(settings.alertDuration)s")
+        model.onAlert = { [weak self] alert in self?.presentAlert(alert) }
         model.start()
 
         // 窗口 frame：用发布出来的新值（willSet 时机，值本身是对的）
@@ -171,6 +178,22 @@ final class NotchController {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.rebuild() }
+        }
+
+        // 调试用：DSH_NOTCH_TEST_ALERT=5 表示启动 5 秒后模拟一次额度提醒，
+        // 用来即时验证「弹出 → 停留 → 自动收起」这套动作，不用等余额真的跌破。
+        if let raw = ProcessInfo.processInfo.environment["DSH_NOTCH_TEST_ALERT"],
+           let delay = Double(raw) {
+            dshLog("TEST_ALERT：\(delay)s 后模拟一次提醒")
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                let current = self.model.snapshot?.primary?.amount ?? Decimal(8.42)
+                let symbol = self.model.snapshot?.primary?.symbol ?? "¥"
+                self.presentAlert(BalanceAlert(kind: .lowBalance(threshold: Decimal(10)),
+                                               symbol: symbol,
+                                               current: current,
+                                               at: Date()))
+            }
         }
 
         if ProcessInfo.processInfo.environment["DSH_NOTCH_FORCE_EXPAND"] == "1" {
@@ -209,6 +232,7 @@ final class NotchController {
                       geometry: geometry,
                       isExpanded: contentExpanded,
                       showSettings: showSettings,
+                      alert: pendingAlert,
                       onToggleSettings: { [weak self] in self?.toggleSettings() })
     }
 
@@ -223,6 +247,8 @@ final class NotchController {
 
     /// 点击刘海带：折叠 → 展开；展开 → 收起。
     func toggle() {
+        // 用户一旦动手，就撤掉提醒的自动收起，让手动操作说了算
+        cancelAlertAutoCollapse()
         setExpanded(!model.isExpanded)
     }
 
@@ -232,14 +258,52 @@ final class NotchController {
     }
 
     func toggleSettings() {
+        cancelAlertAutoCollapse()
         showSettings.toggle()
         dshLog("设置页 \(showSettings ? "打开" : "关闭")")
+        refreshContent()
+        // 两个页面的卡片高度不同，展开状态下要跟着变
+        if model.isExpanded { applyExpansion(true) }
+    }
+
+    // MARK: - 额度提醒
+
+    /// 弹出卡片展示提醒，停留设定时长后自动收起。
+    /// 如果卡片本来就是展开的（用户正在看），只更新内容，不动窗口。
+    private func presentAlert(_ alert: BalanceAlert) {
+        let wasExpanded = model.isExpanded
+        dshLog("额度提醒：\(alert.title)（卡片原本\(wasExpanded ? "已展开" : "折叠")）")
+
+        pendingAlert = alert
+        refreshContent()
+
+        guard !wasExpanded else { return }
+
+        setExpanded(true)
+
+        alertCollapseWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingAlert = nil
+            self.refreshContent()
+            if self.model.isExpanded { self.setExpanded(false) }
+            dshLog("提醒展示结束，自动收起")
+        }
+        alertCollapseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + settings.alertDuration, execute: work)
+    }
+
+    private func cancelAlertAutoCollapse() {
+        guard alertCollapseWork != nil || pendingAlert != nil else { return }
+        alertCollapseWork?.cancel()
+        alertCollapseWork = nil
+        pendingAlert = nil
         refreshContent()
     }
 
     private func applyExpansion(_ expanded: Bool) {
         guard let panel, let geometry else { return }
-        let target = expanded ? geometry.expandedFrame : geometry.collapsedFrame
+        let target = expanded ? geometry.expandedFrame(showSettings: showSettings) : geometry.collapsedFrame
         let duration = settings.animationDuration
 
         dshLog("applyExpansion \(expanded) 目标=\(target) 时长=\(duration)s 缓动=\(settings.easing.rawValue)")

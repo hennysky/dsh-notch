@@ -18,14 +18,22 @@ struct NotchGeometry {
     var collapsedFrame: NSRect { notch.insetBy(dx: -4, dy: 0) }
 
     static let expandedWidth: CGFloat = 300
-    static let expandedCardHeight: CGFloat = 186
+    /// 余额页高度
+    static let balanceCardHeight: CGFloat = 186
+    /// 设置页要放 3 个滑杆 + 分段控件，比余额页高
+    static let settingsCardHeight: CGFloat = 236
+
+    func cardHeight(showSettings: Bool) -> CGFloat {
+        showSettings ? Self.settingsCardHeight : Self.balanceCardHeight
+    }
 
     /// 展开态窗口：从屏幕顶端向下铺开，顶部与刘海连成一体，底部圆角。
-    var expandedFrame: NSRect {
-        NSRect(x: notch.midX - Self.expandedWidth / 2,
-               y: screenTop - notch.height - Self.expandedCardHeight,
-               width: Self.expandedWidth,
-               height: notch.height + Self.expandedCardHeight)
+    func expandedFrame(showSettings: Bool) -> NSRect {
+        let card = cardHeight(showSettings: showSettings)
+        return NSRect(x: notch.midX - Self.expandedWidth / 2,
+                      y: screenTop - notch.height - card,
+                      width: Self.expandedWidth,
+                      height: notch.height + card)
     }
 }
 
