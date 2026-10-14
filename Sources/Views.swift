@@ -41,6 +41,7 @@ struct ExpandedCard: View {
     let showSettings: Bool
     let alert: BalanceAlert?
     let onToggleSettings: () -> Void
+    let onTopUp: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -50,9 +51,10 @@ struct ExpandedCard: View {
                     .padding(.top, 10)
             } else {
                 amount
-                Divider().overlay(Color.white.opacity(0.10)).padding(.vertical, 9)
+                Divider().overlay(Color.white.opacity(0.10)).padding(.vertical, 8)
                 detail(title: "赠送钱包", value: model.bonusText)
                 detail(title: "累计消费", value: model.costText)
+                detail(title: "今日消耗", value: model.todayCostText)
             }
             Spacer(minLength: 6)
             footer
@@ -134,30 +136,50 @@ struct ExpandedCard: View {
                 Text("展开动画与额度提醒，改动即时生效并记住。")
                     .font(.system(size: 9.5))
                     .foregroundStyle(.white.opacity(0.30))
-            } else if let alert {
-                HStack(spacing: 5) {
-                    Image(systemName: "bell.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(alert.color)
-                    Text(alert.title)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(alert.color)
-                }
-                Text(model.updatedText)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.white.opacity(0.32))
             } else {
-                if let errorText = model.errorText {
+                if let alert {
+                    HStack(spacing: 5) {
+                        Image(systemName: "bell.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(alert.color)
+                        Text(alert.title)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(alert.color)
+                    }
+                } else if let errorText = model.errorText {
                     Text(errorText)
                         .font(.system(size: 9.5))
                         .foregroundStyle(Color(red: 1.0, green: 0.5, blue: 0.45))
                         .lineLimit(1)
                 }
-                Text(model.isStale ? "显示的是上次成功获取的数据" : model.updatedText)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.white.opacity(0.32))
+
+                HStack(spacing: 8) {
+                    Text(model.isStale && alert == nil ? "显示的是上次成功获取的数据" : model.updatedText)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.white.opacity(0.32))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    topUpButton
+                }
             }
         }
+    }
+
+    /// 充值入口：打开平台充值页，沿用浏览器自己的登录态，不带任何授权信息。
+    private var topUpButton: some View {
+        Button(action: onTopUp) {
+            HStack(spacing: 2) {
+                Text("充值")
+                    .font(.system(size: 9.5, weight: .medium))
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 7.5, weight: .bold))
+            }
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.white.opacity(0.13)))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -261,6 +283,7 @@ struct NotchRootView: View {
     let showSettings: Bool
     let alert: BalanceAlert?
     let onToggleSettings: () -> Void
+    let onTopUp: () -> Void
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -271,7 +294,8 @@ struct NotchRootView: View {
                              topInset: geometry.notch.height,
                              showSettings: showSettings,
                              alert: alert,
-                             onToggleSettings: onToggleSettings)
+                             onToggleSettings: onToggleSettings,
+                             onTopUp: onTopUp)
             }
         }
         .ignoresSafeArea()

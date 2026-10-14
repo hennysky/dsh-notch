@@ -10,6 +10,8 @@ final class BalanceModel: ObservableObject {
     @Published private(set) var errorText: String?
     @Published private(set) var isRefreshing = false
     @Published var isExpanded = false
+    /// 今日消耗（本地用累计消费的差值推算）
+    @Published private(set) var todayCost: Decimal?
 
     /// 轮询间隔：5 分钟。DSH 自身超时为 30s，不需要更频繁地打接口。
     let refreshInterval: TimeInterval = 300
@@ -21,6 +23,7 @@ final class BalanceModel: ObservableObject {
     private let client = BalanceClient()
     private var pollTask: Task<Void, Never>?
     private var detector = AlertDetector()
+    private var costState = DailyCostStore.load()
 
     init(settings: NotchSettings) {
         self.settings = settings
@@ -50,10 +53,34 @@ final class BalanceModel: ObservableObject {
             let fresh = try await client.fetch()
             snapshot = fresh
             errorText = nil
+            updateDailyCost(fresh)
             evaluateAlert(fresh)
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    private func updateDailyCost(_ fresh: BalanceSnapshot) {
+        guard let cost = fresh.costs.first?.amount.decimal else { return }
+        let today = DailyCost.dayKey(for: fresh.fetchedAt)
+        let yesterday = DailyCost.dayKey(for: fresh.fetchedAt.addingTimeInterval(-86_400))
+        let result = DailyCost.update(costState, cost: cost, today: today, yesterday: yesterday)
+        costState = result.state
+        DailyCostStore.save(result.state)
+        todayCost = result.today
+    }
+
+    /// 充值入口。链接由凭据里的平台来源派生，不带任何授权信息——
+    /// 打开的是浏览器自己的登录态，和 DSH 的做法一致。
+    var topUpURL: URL {
+        let origin = snapshot?.origin ?? URL(string: "https://platform.deepseek.com")!
+        return origin.appendingPathComponent("top_up")
+    }
+
+    var todayCostText: String {
+        guard let todayCost else { return "—" }
+        let symbol = snapshot?.costs.first.map { AmountFormat.symbol(for: $0.currency) } ?? "¥"
+        return symbol + AmountFormat.string(todayCost)
     }
 
     private func evaluateAlert(_ fresh: BalanceSnapshot) {
@@ -67,13 +94,15 @@ final class BalanceModel: ObservableObject {
     }
 
     /// 仅供 `--render` 离屏预览使用：注入一份假快照，不发起网络请求。
-    func injectPreview(normal: String, bonus: String, cost: String) {
+    func injectPreview(normal: String, bonus: String, cost: String, today: String = "2.63") {
         snapshot = BalanceSnapshot(
             normal: [Wallet(currency: "CNY", balance: LooseString(normal))],
             bonus: [Wallet(currency: "CNY", balance: LooseString(bonus))],
             costs: [Cost(currency: "CNY", amount: LooseString(cost))],
-            fetchedAt: Date()
+            fetchedAt: Date(),
+            origin: URL(string: "https://platform.deepseek.com")!
         )
+        todayCost = Decimal(string: today)
     }
 
     // MARK: - 展示

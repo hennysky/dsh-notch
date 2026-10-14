@@ -49,6 +49,8 @@ struct BalanceSnapshot {
     let bonus: [Wallet]
     let costs: [Cost]
     let fetchedAt: Date
+    /// 凭据里的平台来源。充值链接由它派生，与接口调用同一来源，且不携带任何 token。
+    let origin: URL
 
     /// 展示用的主钱包：优先取有余额的充值钱包。
     /// 注意：查询失败时不会走到这里——失败绝不合成 0，而是保留上一次的快照。
@@ -264,7 +266,8 @@ struct BalanceClient {
         return BalanceSnapshot(normal: biz.normalWallets,
                                bonus: biz.bonusWallets,
                                costs: biz.totalCosts,
-                               fetchedAt: Date())
+                               fetchedAt: Date(),
+                               origin: credential.issuer)
     }
 
     private struct Envelope: Decodable {

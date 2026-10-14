@@ -28,6 +28,7 @@ func runSelfTest() -> Int32 {
         print("  充值钱包  \(snapshot.primary?.display ?? "—")")
         print("  赠送钱包  \(snapshot.bonus.first?.display ?? "—")")
         print("  累计消费  \(snapshot.costs.first?.display ?? "—")")
+        print("  充值链接  \(snapshot.origin.appendingPathComponent("top_up").absoluteString)")
         return 0
     case .failure(let error):
         let text = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -74,7 +75,8 @@ func runRenderCheck() -> Int32 {
                              isExpanded: true,
                              showSettings: showSettings,
                              alert: alert,
-                             onToggleSettings: {})
+                             onToggleSettings: {},
+                             onTopUp: {})
         .frame(width: size.width, height: size.height)
 
     let renderer = ImageRenderer(content: view)
@@ -371,6 +373,69 @@ func runAlertCheck() -> Int32 {
     return failed == 0 ? 0 : 1
 }
 
+// MARK: - 今日消耗自检
+//
+// 平台只给累计消费，今日消耗是本地用差值推的。跨天、隔几天、异常值这些分支
+// 靠肉眼是验不出来的，必须逐条验。
+
+@MainActor
+func runCostCheck() -> Int32 {
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String) {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+
+    let today = "2026-10-14"
+    let yesterday = "2026-10-13"
+
+    // 1. 当天第一次读数：没有基线，今日消耗为 0（不虚报）
+    var result = DailyCost.update(DailyCostState(), cost: 500, today: today, yesterday: yesterday)
+    check("当天首次读数 → 今日消耗 0", result.today == 0,
+          "今日 \(result.today)")
+
+    // 2. 同一天再读，取差值
+    result = DailyCost.update(result.state, cost: 502.5, today: today, yesterday: yesterday)
+    check("同一天再读 → 差值 ¥2.50", result.today == Decimal(2.5),
+          "今日 \(result.today)")
+
+    // 3. 跨天且昨天有读数：拿昨天末值当基线
+    result = DailyCost.update(result.state, cost: 505, today: "2026-10-15", yesterday: today)
+    check("跨天（昨天有读数）→ 用昨天末值当基线", result.today == Decimal(2.5),
+          "今日 \(result.today)（505 − 502.5）")
+
+    // 4. 跨天但上次读数是好几天前：只能用当天首读兜底
+    let stale = DailyCostState(dayKey: "2026-10-10", baseline: 480, lastCost: 490, lastCostDayKey: "2026-10-10")
+    result = DailyCost.update(stale, cost: 505, today: "2026-10-15", yesterday: "2026-10-14")
+    check("隔了几天没开 → 当天首读兜底（今日 0，不误报）", result.today == 0,
+          "今日 \(result.today)")
+
+    // 5. 差值异常为负时钳到 0
+    let mid = DailyCostState(dayKey: "2026-10-15", baseline: 505, lastCost: 505, lastCostDayKey: "2026-10-15")
+    result = DailyCost.update(mid, cost: 500, today: "2026-10-15", yesterday: "2026-10-14")
+    check("差值异常为负 → 钳到 0", result.today == 0, "今日 \(result.today)")
+
+    // 6. 连续多天各自独立统计
+    var state = DailyCostState()
+    var day1 = Decimal(0)
+    var day2 = Decimal(0)
+    for (cost, day, prev) in [(Decimal(100), "2026-10-20", "2026-10-19"),
+                              (Decimal(103), "2026-10-20", "2026-10-19"),
+                              (Decimal(106), "2026-10-21", "2026-10-20"),
+                              (Decimal(107), "2026-10-21", "2026-10-20")] {
+        let r = DailyCost.update(state, cost: cost, today: day, yesterday: prev)
+        state = r.state
+        if day == "2026-10-20" { day1 = r.today } else { day2 = r.today }
+    }
+    check("连续两天各自独立统计", day1 == 3 && day2 == 4,
+          "10-20 消耗 \(day1)，10-21 消耗 \(day2)")
+
+    print("")
+    print(failed == 0 ? "今日消耗推算全部通过" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
 // MARK: - 入口
 
 if CommandLine.arguments.contains("--version") {
@@ -392,6 +457,10 @@ if CommandLine.arguments.contains("--panelcheck") {
 
 if CommandLine.arguments.contains("--clicktest") {
     exit(MainActor.assumeIsolated { runClickTest() })
+}
+
+if CommandLine.arguments.contains("--costcheck") {
+    exit(MainActor.assumeIsolated { runCostCheck() })
 }
 
 if CommandLine.arguments.contains("--alertcheck") {

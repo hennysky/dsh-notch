@@ -233,7 +233,8 @@ final class NotchController {
                       isExpanded: contentExpanded,
                       showSettings: showSettings,
                       alert: pendingAlert,
-                      onToggleSettings: { [weak self] in self?.toggleSettings() })
+                      onToggleSettings: { [weak self] in self?.toggleSettings() },
+                      onTopUp: { [weak self] in self?.openTopUpPage() })
     }
 
     /// 强制重建视图树。SwiftUI 的 @ObservedObject 传播不会刷新这棵由
@@ -255,6 +256,13 @@ final class NotchController {
     func setExpanded(_ expanded: Bool) {
         dshLog("setExpanded(\(expanded))")
         model.isExpanded = expanded
+    }
+
+    /// 打开平台充值页。用系统浏览器，沿用那边的登录态；链接不含任何 token。
+    func openTopUpPage() {
+        let url = model.topUpURL
+        dshLog("打开充值页：\(url.absoluteString)")
+        NSWorkspace.shared.open(url)
     }
 
     func toggleSettings() {

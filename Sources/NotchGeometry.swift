@@ -19,7 +19,7 @@ struct NotchGeometry {
 
     static let expandedWidth: CGFloat = 300
     /// 余额页高度
-    static let balanceCardHeight: CGFloat = 186
+    static let balanceCardHeight: CGFloat = 210
     /// 设置页要放 3 个滑杆 + 分段控件，比余额页高
     static let settingsCardHeight: CGFloat = 236
 
