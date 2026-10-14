@@ -13,6 +13,7 @@
 - 平台：macOS 13+（在 MacBook Pro 18,3 / macOS 27 上开发和验证）
 - 构建：`./build.sh`
 - 自检：`--panelcheck` / `--clicktest` / `--settingscheck` / `--selftest`，详见下文
+- 协议：MIT，见 [LICENSE](LICENSE)
 
 ## 它解决什么问题
 
