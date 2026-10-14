@@ -1,0 +1,328 @@
+import AppKit
+import SwiftUI
+
+// MARK: - 自检模式
+//
+// 只验证数据层（凭据读取 + 接口调用 + 解析），不创建任何窗口。
+// 用法：DSHNotch --selftest
+
+final class ResultBox: @unchecked Sendable {
+    var value: Result<BalanceSnapshot, Error>?
+}
+
+func runSelfTest() -> Int32 {
+    let box = ResultBox()
+    let semaphore = DispatchSemaphore(value: 0)
+
+    Task {
+        do { box.value = .success(try await BalanceClient().fetch()) }
+        catch { box.value = .failure(error) }
+        semaphore.signal()
+    }
+    semaphore.wait()
+
+    switch box.value {
+    case .success(let snapshot):
+        print("✓ 凭据读取成功（~/.dsh/.credentials.yaml）")
+        print("✓ 接口调用成功")
+        print("  充值钱包  \(snapshot.primary?.display ?? "—")")
+        print("  赠送钱包  \(snapshot.bonus.first?.display ?? "—")")
+        print("  累计消费  \(snapshot.costs.first?.display ?? "—")")
+        return 0
+    case .failure(let error):
+        let text = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        print("✗ 失败：\(text)")
+        return 1
+    case .none:
+        print("✗ 未取得结果")
+        return 1
+    }
+}
+
+// MARK: - 离屏渲染
+//
+// 把展开态按窗口真实尺寸渲染成 PNG，用来检查布局有没有被裁掉。
+
+@MainActor
+func runRenderCheck() -> Int32 {
+    let model = BalanceModel()
+    model.injectPreview(normal: "25.9813852200000000",
+                        bonus: "0",
+                        cost: "540.1513852200000000")
+    model.isExpanded = true
+    let settings = NotchSettings()
+
+    guard let geometry = NotchGeometryResolver.resolve() else {
+        print("✗ 取不到屏幕几何")
+        return 1
+    }
+
+    let size = NSSize(width: NotchGeometry.expandedWidth,
+                      height: geometry.notch.height + NotchGeometry.expandedCardHeight)
+    let view = NotchRootView(model: model,
+                             settings: settings,
+                             geometry: geometry,
+                             isExpanded: true,
+                             showSettings: CommandLine.arguments.contains("--render-settings"),
+                             onToggleSettings: {})
+        .frame(width: size.width, height: size.height)
+
+    let renderer = ImageRenderer(content: view)
+    renderer.scale = 2
+
+    guard let image = renderer.nsImage,
+          let tiff = image.tiffRepresentation,
+          let rep = NSBitmapImageRep(data: tiff),
+          let png = rep.representation(using: .png, properties: [:]) else {
+        print("✗ 渲染失败")
+        return 1
+    }
+
+    let name = CommandLine.arguments.contains("--render-settings") ? "dsh-notch-settings.png" : "dsh-notch-expanded.png"
+    let out = URL(fileURLWithPath: "/tmp/" + name)
+    do { try png.write(to: out) } catch {
+        print("✗ 写入失败：\(error.localizedDescription)")
+        return 1
+    }
+    print("✓ 已渲染 \(Int(size.width))x\(Int(size.height)) pt → \(out.path)")
+    return 0
+}
+
+// MARK: - 窗口定位自检
+//
+// 回归护栏 1：NSWindow 默认把 frame 约束进 visibleFrame（不含菜单栏），
+// 窗口会被整体下推 33pt，折叠窗口就盖不到刘海。
+// 回归护栏 2：窗口层级必须高于菜单栏，否则 frame 再对也看不见。
+
+@MainActor
+func runPanelCheck() -> Int32 {
+    _ = NSApplication.shared
+    guard let geometry = NotchGeometryResolver.resolve() else {
+        print("✗ 取不到屏幕几何")
+        return 1
+    }
+
+    let panel = NotchPanel.configured(contentRect: geometry.collapsedFrame)
+    var failed = 0
+
+    let levelOK = panel.level.rawValue > NSWindow.Level.mainMenu.rawValue
+    if !levelOK { failed += 1 }
+    print("\(levelOK ? "✓" : "✗") 窗口层级 \(panel.level.rawValue) > 菜单栏层级 \(NSWindow.Level.mainMenu.rawValue)")
+
+    // 容差 1pt：窗口 frame 会对齐到 2x 像素网格
+    func same(_ a: NSRect, _ b: NSRect) -> Bool {
+        abs(a.minX - b.minX) < 1 && abs(a.minY - b.minY) < 1
+            && abs(a.width - b.width) < 1 && abs(a.height - b.height) < 1
+    }
+
+    for (name, target) in [("折叠（刘海矩形）", geometry.collapsedFrame),
+                           ("展开（卡片矩形）", geometry.expandedFrame)] {
+        panel.setFrame(target, display: false)
+        let actual = panel.frame
+        let ok = same(actual, target)
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    目标 \(target)")
+        print("    实际 \(actual)")
+    }
+
+    print("")
+    print("  屏幕 visibleFrame = \(geometry.screen.visibleFrame)（不含菜单栏）")
+    print("  刘海矩形          = \(geometry.notch)")
+    print(failed == 0 ? "窗口落点与层级正确" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
+// MARK: - 点击交互自检
+//
+// 回归护栏 3（最贵的一个教训）：窗口尺寸/层级/位置全对，内容却可能是【全透明】的。
+// 首帧之后发生的状态变化，SwiftUI 的 @ObservedObject 传播不一定刷新
+// NSHostingView 手工托管的视图树——必须显式重设 rootView。
+// 这个自检直接合成一次点击，然后数窗口内容的非透明像素。
+
+@MainActor
+func runClickTest() -> Int32 {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+
+    guard let geometry = NotchGeometryResolver.resolve() else {
+        print("✗ 取不到屏幕几何")
+        return 1
+    }
+
+    let controller = NotchController()
+    controller.start()
+
+    // 收起动画走完才撤内容，所以等待时间必须覆盖动画时长
+    let settle = controller.settings.animationDuration + 0.5
+
+    // 让面板建起来、渲染出第一帧
+    RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+
+    guard let panel = NSApp.windows.compactMap({ $0 as? NotchPanel }).first,
+          let host = panel.contentView else {
+        print("✗ 找不到面板")
+        return 1
+    }
+
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String) {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+
+    // 1. 折叠态：不画任何东西
+    let collapsedPixels = opaquePixelCount(host)
+    check("折叠态不画任何东西", collapsedPixels == 0, "非透明像素 \(collapsedPixels)")
+
+    // 2. 合成一次对刘海带的点击（走真实的 mouseDown 路径）
+    let clickPoint = NSPoint(x: host.bounds.midX, y: host.bounds.height - 3)
+    let clickEvent = NSEvent.mouseEvent(with: .leftMouseDown,
+                                        location: clickPoint,
+                                        modifierFlags: [],
+                                        timestamp: ProcessInfo.processInfo.systemUptime,
+                                        windowNumber: panel.windowNumber,
+                                        context: nil,
+                                        eventNumber: 0,
+                                        clickCount: 1,
+                                        pressure: 1)
+    if let clickEvent {
+        host.mouseDown(with: clickEvent)
+    } else {
+        check("合成点击事件", false, "NSEvent.mouseEvent 返回 nil")
+    }
+    RunLoop.main.run(until: Date().addingTimeInterval(settle))
+
+    let expandedPixels = opaquePixelCount(host)
+    check("点击后卡片出现且有内容", expandedPixels > 0,
+          "非透明像素 \(expandedPixels)（为 0 说明 SwiftUI 没刷新）")
+    dumpViewContent(host, to: "/tmp/dsh-notch-card.png")
+
+    // 3. 再点一次收起
+    if let clickEvent2 = NSEvent.mouseEvent(with: .leftMouseDown,
+                                            location: clickPoint,
+                                            modifierFlags: [],
+                                            timestamp: ProcessInfo.processInfo.systemUptime,
+                                            windowNumber: panel.windowNumber,
+                                            context: nil,
+                                            eventNumber: 0,
+                                            clickCount: 1,
+                                            pressure: 1) {
+        // 收起后刘海带仍在窗口顶端，用面板当前尺寸重新算一次
+        let local = NSPoint(x: panel.contentView?.bounds.midX ?? 100,
+                            y: (panel.contentView?.bounds.height ?? 32) - 3)
+        if let e = NSEvent.mouseEvent(with: .leftMouseDown, location: local, modifierFlags: [],
+                                      timestamp: ProcessInfo.processInfo.systemUptime,
+                                      windowNumber: panel.windowNumber, context: nil,
+                                      eventNumber: 0, clickCount: 1, pressure: 1) {
+            host.mouseDown(with: e)
+        } else {
+            host.mouseDown(with: clickEvent2)
+        }
+    }
+    // 动画走到一半时采样：内容应当还在。
+    // 如果收起是「瞬间消失」，这里会是 0——那正是「消失没有动画」的成因。
+    let half = controller.settings.animationDuration * 0.5
+    RunLoop.main.run(until: Date().addingTimeInterval(half))
+    let midPixels = opaquePixelCount(host)
+    check("收起动画进行中内容仍在", midPixels > 0,
+          "动画走到 \(String(format: "%.2f", half))s 时非透明像素 \(midPixels)")
+
+    RunLoop.main.run(until: Date().addingTimeInterval(settle - half))
+
+    let afterPixels = opaquePixelCount(host)
+    check("动画结束后内容才撤掉", afterPixels == 0,
+          "非透明像素 \(afterPixels)，共等待 \(String(format: "%.2f", settle))s")
+
+    panel.orderOut(nil)
+    print("")
+    print(failed == 0 ? "点击交互链路全部通过（含渲染刷新）" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
+// MARK: - 设置持久化自检
+
+@MainActor
+func runSettingsCheck() -> Int32 {
+    let settings = NotchSettings()
+    let originalDuration = settings.animationDuration
+    let originalEasing = settings.easing
+    defer {
+        settings.animationDuration = originalDuration
+        settings.easing = originalEasing
+    }
+
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String) {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+
+    settings.animationDuration = 0.77
+    settings.easing = .linear
+
+    let reloaded = NotchSettings()
+    check("动画时长写入后能被重新读出",
+          abs(reloaded.animationDuration - 0.77) < 0.001,
+          "写入 0.77，读出 \(reloaded.animationDuration)")
+    check("缓动曲线写入后能被重新读出",
+          reloaded.easing == .linear,
+          "写入 linear，读出 \(reloaded.easing.rawValue)")
+
+    settings.reset()
+    check("恢复默认",
+          settings.isDefault && abs(settings.animationDuration - NotchSettings.defaultDuration) < 0.001,
+          "时长 \(settings.animationDuration)s / \(settings.easing.rawValue)")
+
+    print("")
+    print("  取值范围 \(NotchSettings.durationRange)")
+    print(failed == 0 ? "设置项读写正常" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
+// MARK: - 版本
+
+func appVersion() -> String {
+    let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
+    return "\(short) (build \(build))"
+}
+
+// MARK: - 入口
+
+if CommandLine.arguments.contains("--version") {
+    print("DSHNotch \(appVersion())")
+    exit(0)
+}
+
+if CommandLine.arguments.contains("--selftest") {
+    exit(runSelfTest())
+}
+
+if CommandLine.arguments.contains("--render") {
+    exit(MainActor.assumeIsolated { runRenderCheck() })
+}
+
+if CommandLine.arguments.contains("--panelcheck") {
+    exit(MainActor.assumeIsolated { runPanelCheck() })
+}
+
+if CommandLine.arguments.contains("--clicktest") {
+    exit(MainActor.assumeIsolated { runClickTest() })
+}
+
+if CommandLine.arguments.contains("--settingscheck") {
+    exit(MainActor.assumeIsolated { runSettingsCheck() })
+}
+
+let app = NSApplication.shared
+app.setActivationPolicy(.accessory)  // 不占 Dock、不抢菜单栏
+
+MainActor.assumeIsolated {
+    let controller = NotchController()
+    controller.start()
+    _ = controller   // 保持强引用
+    app.run()
+}
