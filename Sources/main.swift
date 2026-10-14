@@ -258,8 +258,18 @@ func runClickTest() -> Int32 {
         print("    \(detail)")
     }
 
+    dshLog("宿主视图安全区 = \(host.safeAreaInsets)，窗口高 \(host.bounds.height)")
+    print("  宿主视图安全区 \(host.safeAreaInsets)，窗口高 \(host.bounds.height)")
+
     let collapsedPixels = opaquePixelCount(host)
     check("折叠态不画任何东西", collapsedPixels == 0, "非透明像素 \(collapsedPixels)")
+
+    // 命中测试单独验：直接调 mouseDown 会绕过 hitTest，
+    // 真实点击却要经过它——折叠窗口被安全区内缩吃光时就是在这里失败。
+    let hitProbe = NSPoint(x: host.bounds.midX, y: host.bounds.height - 16)
+    let hitView = host.hitTest(hitProbe)
+    check("折叠态命中测试能点中面板", hitView != nil,
+          hitView.map { "命中 \(type(of: $0))" } ?? "hitTest 返回 nil —— 真实点击会穿透，到不了 mouseDown")
 
     func click() {
         let point = NSPoint(x: host.bounds.midX, y: host.bounds.height - 3)

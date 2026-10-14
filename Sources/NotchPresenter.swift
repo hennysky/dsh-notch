@@ -60,6 +60,23 @@ final class ClickHostingView<Content: View>: NSHostingView<Content> {
     /// 窗口顶端那一条刘海带的高度
     var notchBandHeight: CGFloat = 32
 
+    /// 刘海带永远可点。
+    ///
+    /// 折叠态窗口只有 32pt 高，里面除了一层 `Color.clear` 什么都没有；
+    /// `NSHostingView.hitTest` 在这种状态下返回 nil，真实点击会直接穿透到下层，
+    /// 到不了 `mouseDown` —— 表现就是「点刘海没反应」，而展开态因为更高而正常。
+    /// 这里显式把这条带子判给自己，不再依赖 SwiftUI 的命中语义。
+    ///
+    /// 这个 bug 在 v1.0 上线后才被发现，因为当时的 `--clicktest` 是直接调
+    /// `mouseDown(for:)`，**绕过了命中测试**。现在自检里加了 hitTest 断言。
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        if local.y >= bounds.height - notchBandHeight, bounds.contains(local) {
+            return self
+        }
+        return super.hitTest(point)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let local = event.locationInWindow
         if local.y >= bounds.height - notchBandHeight {
@@ -152,6 +169,12 @@ final class NotchPresenter: BalancePresenting {
 
         self.panel = panel
         self.host = host
+
+        // 诊断：沿用 SafeArea 的值确认 ignoresSafeArea 是否必要
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak host] in
+            guard let host else { return }
+            dshLog("宿主视图 安全区=\(host.safeAreaInsets) bounds=\(host.bounds)")
+        }
     }
 
     private func makeRootView(_ geometry: NotchGeometry) -> CardRootView {

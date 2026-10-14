@@ -464,6 +464,9 @@ struct CardRootView: View {
                             chrome: chrome, state: state, actions: actions)
             }
         }
+        // 窗口刻意压在菜单栏区域上，这里声明忽略安全区，避免系统将来给这块内容
+        // 加内缩时把卡片顶下去。实测本机安全区为 0，属于防御性写法。
+        .ignoresSafeArea()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
