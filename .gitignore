@@ -18,3 +18,6 @@ build/
 xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
+
+# 发布产物
+dist/

@@ -42,12 +42,13 @@ struct ExpandedCard: View {
     let alert: BalanceAlert?
     let onToggleSettings: () -> Void
     let onTopUp: () -> Void
+    let onQuit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if showSettings {
-                SettingsPage(settings: settings)
+                SettingsPage(settings: settings, onQuit: onQuit)
                     .padding(.top, 10)
             } else {
                 amount
@@ -186,6 +187,7 @@ struct ExpandedCard: View {
 /// 设置页：展开动画 + 额度提醒
 struct SettingsPage: View {
     @ObservedObject var settings: NotchSettings
+    let onQuit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -210,13 +212,20 @@ struct SettingsPage: View {
             Slider(value: $settings.alertDuration, in: NotchSettings.alertDurationRange, step: 1)
                 .modifier(CompactSlider())
 
-            HStack {
-                Spacer(minLength: 0)
+            HStack(spacing: 12) {
                 Button("恢复默认") { settings.reset() }
                     .buttonStyle(.plain)
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(settings.isDefault ? 0.25 : 0.7))
                     .disabled(settings.isDefault)
+
+                Spacer(minLength: 0)
+
+                // 没有这个按钮，用户只能去活动监视器里杀进程
+                Button("退出应用") { onQuit() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.5).opacity(0.85))
             }
             .padding(.top, 7)
         }
@@ -284,6 +293,7 @@ struct NotchRootView: View {
     let alert: BalanceAlert?
     let onToggleSettings: () -> Void
     let onTopUp: () -> Void
+    let onQuit: () -> Void
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -295,7 +305,8 @@ struct NotchRootView: View {
                              showSettings: showSettings,
                              alert: alert,
                              onToggleSettings: onToggleSettings,
-                             onTopUp: onTopUp)
+                             onTopUp: onTopUp,
+                             onQuit: onQuit)
             }
         }
         .ignoresSafeArea()

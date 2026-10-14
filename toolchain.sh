@@ -20,6 +20,9 @@
 DSH_NOTCH_TOOLCHAIN="${DSH_NOTCH_TOOLCHAIN:-/opt/homebrew/opt/swift/bin}"
 DSH_NOTCH_SDK="${DSH_NOTCH_SDK:-/Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk}"
 DSH_NOTCH_MODCACHE="${DSH_NOTCH_MODCACHE:-/tmp/dsh-notch-modcache}"
+# 部署目标必须显式指定：不指定的话会继承工具链默认值（本机实测是 macosx28.0），
+# 产物 LC_BUILD_VERSION 会写成 minos 28.0 —— 发给谁都跑不起来。
+DSH_NOTCH_TARGET="${DSH_NOTCH_TARGET:-arm64-apple-macosx14.0}"
 
 if [ ! -x "$DSH_NOTCH_TOOLCHAIN/swiftc" ]; then
   echo "错误：找不到 Swift 工具链：$DSH_NOTCH_TOOLCHAIN/swiftc" >&2
@@ -34,13 +37,14 @@ fi
 
 mkdir -p "$DSH_NOTCH_MODCACHE"
 
-export DSH_NOTCH_TOOLCHAIN DSH_NOTCH_SDK DSH_NOTCH_MODCACHE
+export DSH_NOTCH_TOOLCHAIN DSH_NOTCH_SDK DSH_NOTCH_MODCACHE DSH_NOTCH_TARGET
 export SWIFTC="$DSH_NOTCH_TOOLCHAIN/swiftc"
 export PATH="$DSH_NOTCH_TOOLCHAIN:$PATH"
 
 # 统一构建入口：始终显式指定 SDK 与可写模块缓存，避免读到错误工具链或只读缓存目录。
 dsh_swiftc() {
-  "$SWIFTC" -sdk "$DSH_NOTCH_SDK" -module-cache-path "$DSH_NOTCH_MODCACHE" "$@"
+  "$SWIFTC" -sdk "$DSH_NOTCH_SDK" -module-cache-path "$DSH_NOTCH_MODCACHE" \
+    -target "$DSH_NOTCH_TARGET" "$@"
 }
 
 export -f dsh_swiftc

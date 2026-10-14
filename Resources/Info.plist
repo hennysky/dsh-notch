@@ -21,7 +21,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
+	<string>14.0</string>
 	<!-- 纯菜单栏/刘海工具：不显示 Dock 图标、不抢焦点 -->
 	<key>LSUIElement</key>
 	<true/>

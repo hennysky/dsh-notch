@@ -78,7 +78,8 @@ func runRenderCheck() -> Int32 {
                              showSettings: showSettings,
                              alert: alert,
                              onToggleSettings: {},
-                             onTopUp: {})
+                             onTopUp: {},
+                             onQuit: {})
         .frame(width: size.width, height: size.height)
 
     let renderer = ImageRenderer(content: view)
@@ -164,13 +165,14 @@ func runClickTest() -> Int32 {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
 
-    guard let geometry = NotchGeometryResolver.resolve() else {
+    guard NotchGeometryResolver.resolve() != nil else {
         print("✗ 取不到屏幕几何")
         return 1
     }
 
     let controller = NotchController()
-    controller.start()
+    // 不轮询余额：真实余额触发的额度提醒会弹开卡片，污染这里的状态断言
+    controller.start(pollBalance: false)
 
     // 收起动画走完才撤内容，所以等待时间必须覆盖动画时长
     let settle = controller.settings.animationDuration + 0.5

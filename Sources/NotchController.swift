@@ -143,11 +143,13 @@ final class NotchController {
 
     deinit { dshLog("!!! NotchController deinit") }
 
-    func start() {
-        dshLog("start() 动画 \(settings.animationDuration)s / \(settings.easing.rawValue)"
+    /// - Parameter pollBalance: 是否启动余额轮询。UI 自检传 false ——
+    ///   否则真实余额触发额度提醒会把卡片顶开，测试的初始状态就不干净了。
+    func start(pollBalance: Bool = true) {
+        dshLog("start(pollBalance: \(pollBalance)) 动画 \(settings.animationDuration)s / \(settings.easing.rawValue)"
                + " 提醒 余额<\(settings.lowBalanceThreshold)/消耗>\(settings.burnThreshold) 停留\(settings.alertDuration)s")
         model.onAlert = { [weak self] alert in self?.presentAlert(alert) }
-        model.start()
+        if pollBalance { model.start() }
 
         // 窗口 frame：用发布出来的新值（willSet 时机，值本身是对的）
         model.$isExpanded
@@ -205,7 +207,7 @@ final class NotchController {
     func rebuild() {
         guard let geometry = NotchGeometryResolver.resolve() else { return }
         self.geometry = geometry
-        dshLog("rebuild 折叠=\(geometry.collapsedFrame) 展开=\(geometry.expandedFrame)")
+        dshLog("rebuild 折叠=\(geometry.collapsedFrame) 展开=\(geometry.expandedFrame(showSettings: false))")
 
         panel?.orderOut(nil)
         panel?.contentView = nil
@@ -234,7 +236,8 @@ final class NotchController {
                       showSettings: showSettings,
                       alert: pendingAlert,
                       onToggleSettings: { [weak self] in self?.toggleSettings() },
-                      onTopUp: { [weak self] in self?.openTopUpPage() })
+                      onTopUp: { [weak self] in self?.openTopUpPage() },
+                      onQuit: { NSApp.terminate(nil) })
     }
 
     /// 强制重建视图树。SwiftUI 的 @ObservedObject 传播不会刷新这棵由

@@ -16,6 +16,59 @@
 - 自检：`--panelcheck` / `--clicktest` / `--settingscheck` / `--selftest`，详见下文
 - 协议：MIT，见 [LICENSE](LICENSE)
 
+## 安装
+
+### 下载预编译包（推荐）
+
+1. 从 [Releases](https://github.com/hennysky/dsh-notch/releases) 下载 `DSHNotch-0.4.zip`
+2. 解压，把 `DSHNotch.app` 拖进「应用程序」
+3. **首次打开必须右键 → 打开**。应用没有 Apple 开发者签名与公证，双击会被 Gatekeeper 拦下
+
+   或者用一条命令去掉隔离标记：
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/DSHNotch.app
+   ```
+
+下载 + 安装 + 去隔离 + 启动，一条龙：
+
+```bash
+curl -fL -o /tmp/DSHNotch.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v0.4/DSHNotch-0.4.zip \
+  && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
+  && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
+  && open /Applications/DSHNotch.app
+```
+
+**环境要求：Apple Silicon + macOS 14.0+**
+
+- 带刘海的 MacBook **全部是 Apple Silicon**（刘海从 2021 款 M1 Pro 起），Intel 机型没有刘海，
+  所以只构建 arm64，没有做通用二进制。
+- macOS 14 是 `UnevenRoundedRectangle` 等 API 的下限。
+
+> 为什么没有签名：Apple Developer ID 需要 99 美元/年。不签名的代价就是首次打开要走
+> 「右键 → 打开」这一步，之后就不再有提示。
+
+### 从源码构建
+
+```bash
+git clone https://github.com/hennysky/dsh-notch.git
+cd dsh-notch
+./build.sh      # → build/DSHNotch.app
+./release.sh    # → dist/DSHNotch-x.y.zip
+```
+
+需要 Swift 工具链（Xcode 或 Command Line Tools）。本机 CLT 的 SDK 与编译器版本戳
+不一致会导致系统 `swiftc` 失效，`toolchain.sh` 里记录了根因与绕行方式。
+
+### 退出 / 自启 / 卸载
+
+| | |
+|---|---|
+| **退出** | 点刘海 → 右上角滑杆图标 → 「退出应用」 |
+| **开机自启** | 系统设置 → 通用 → 登录项 → 添加 DSHNotch |
+| **卸载** | 把 `DSHNotch.app` 删掉。配置存在 `local.dsh.notch` 这个 UserDefaults 域里，想彻底清干净就一并删除 |
+
 ## 它解决什么问题
 
 DSH 的余额只在应用界面里看得到。这个工具把余额搬到刘海——不占桌面空间，
