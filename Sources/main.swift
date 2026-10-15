@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 // MARK: - 版本
@@ -530,6 +531,55 @@ func runRefreshCheck() -> Int32 {
     return failed == 0 ? 0 : 1
 }
 
+// MARK: - 开机自启自检
+//
+// 未签名应用能否注册登录项是个未知数，所以直接试一次并给出结论。
+// 试完立刻撤销，避免留下指向构建目录的登录项。
+
+@MainActor
+func runLoginCheck() -> Int32 {
+    print("应用路径   \(Bundle.main.bundlePath)")
+    print("Bundle ID  \(Bundle.main.bundleIdentifier ?? "(无)")")
+    print("签名       \(signatureDescription())")
+    print("SMAppService 状态 = \(SMAppService.mainApp.status.rawValue) "
+          + "(0=未注册 1=已启用 2=需批准 3=未找到)")
+    print("")
+
+    guard SMAppService.mainApp.status != .requiresApproval else {
+        print("⚠️ 已注册但需要在「系统设置 → 通用 → 登录项」里批准")
+        return 0
+    }
+
+    if let error = LaunchAtLogin.set(true) {
+        print("✗ 注册失败：\(error)")
+        print("")
+        print("结论：未签名应用被系统拒绝注册登录项。")
+        print("      用户仍可在「系统设置 → 通用 → 登录项」手动添加。")
+        return 1
+    }
+
+    print("✓ 注册成功，isEnabled = \(LaunchAtLogin.isEnabled)")
+    _ = LaunchAtLogin.set(false)
+    print("  已撤销（不留登录项）")
+    print("")
+    print("结论：SMAppService 可用。")
+    return 0
+}
+
+private func signatureDescription() -> String {
+    var code: SecCode?
+    guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return "未知" }
+    var staticCode: SecStaticCode?
+    guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return "未知" }
+    var info: CFDictionary?
+    guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+          let dict = info as? [String: Any] else { return "未知" }
+    let identifier = dict[kSecCodeInfoIdentifier as String] as? String ?? "?"
+    let flags = dict[kSecCodeInfoFlags as String] as? UInt32 ?? 0
+    let adhoc = (flags & 0x2) != 0
+    return "\(identifier)\(adhoc ? "（adhoc）" : "")"
+}
+
 // MARK: - 入口
 
 if CommandLine.arguments.contains("--version") {
@@ -556,6 +606,9 @@ if CommandLine.arguments.contains("--alertcheck") {
 }
 if CommandLine.arguments.contains("--costcheck") {
     exit(MainActor.assumeIsolated { runCostCheck() })
+}
+if CommandLine.arguments.contains("--logincheck") {
+    exit(MainActor.assumeIsolated { runLoginCheck() })
 }
 if CommandLine.arguments.contains("--refreshcheck") {
     exit(MainActor.assumeIsolated { runRefreshCheck() })

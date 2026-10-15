@@ -64,6 +64,19 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
         }
     }
 
+    func showCard() {
+        if popover?.isShown != true { togglePopover() }
+    }
+
+    func openSettings() {
+        state.showSettings = true
+        if popover?.isShown != true {
+            togglePopover()
+        } else {
+            hosting?.rootView = makeRootView()
+        }
+    }
+
     func tearDown() {
         alertResetWork?.cancel()
         cancellables.removeAll()

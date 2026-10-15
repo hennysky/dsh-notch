@@ -66,6 +66,8 @@ final class NotchSettings: ObservableObject {
     @Published var alertDuration: Double { didSet { persist() } }
     @Published var presentation: Presentation { didSet { persist() } }
     @Published var launchAtLogin: Bool { didSet { persist() } }
+    /// 刘海形态下是否显示菜单栏图标（存在感与退出入口）
+    @Published var showMenuBarIcon: Bool { didSet { persist() } }
 
     private enum Key {
         static let duration = "dshNotch.animationDuration"
@@ -75,6 +77,7 @@ final class NotchSettings: ObservableObject {
         static let alertDuration = "dshNotch.alertDuration"
         static let presentation = "dshNotch.presentation"
         static let launchAtLogin = "dshNotch.launchAtLogin"
+        static let showMenuBarIcon = "dshNotch.showMenuBarIcon"
     }
 
     init() {
@@ -91,6 +94,8 @@ final class NotchSettings: ObservableObject {
                                     fallback: Self.defaultAlertDuration, range: Self.alertDurationRange)
         presentation = Presentation(rawValue: defaults.string(forKey: Key.presentation) ?? "") ?? .automatic
         launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
+        // 默认开：没有它，刘海形态下应用启动了也看不出任何迹象
+        showMenuBarIcon = defaults.object(forKey: Key.showMenuBarIcon) as? Bool ?? true
     }
 
     private static func stored(_ defaults: UserDefaults, _ key: String,
@@ -107,6 +112,7 @@ final class NotchSettings: ObservableObject {
             && abs(alertDuration - Self.defaultAlertDuration) < 0.001
             && presentation == .automatic
             && !launchAtLogin
+            && showMenuBarIcon
     }
 
     func reset() {
@@ -116,6 +122,7 @@ final class NotchSettings: ObservableObject {
         burnThreshold = Self.defaultBurn
         alertDuration = Self.defaultAlertDuration
         presentation = .automatic
+        showMenuBarIcon = true
     }
 
     private func persist() {
@@ -127,6 +134,7 @@ final class NotchSettings: ObservableObject {
         defaults.set(alertDuration, forKey: Key.alertDuration)
         defaults.set(presentation.rawValue, forKey: Key.presentation)
         defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
+        defaults.set(showMenuBarIcon, forKey: Key.showMenuBarIcon)
     }
 
     // MARK: - 展示

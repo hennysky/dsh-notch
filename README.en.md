@@ -88,6 +88,23 @@ it reads the credentials DSH already stored on this machine and calls DeepSeek's
 
 ## Usage
 
+### Launching
+
+Drag `DSHNotch.app` into `/Applications` and double-click it (right-click → Open the first time).
+
+Once running, **a card icon appears in the menu bar** — the app has no Dock icon and in notch
+mode draws nothing on screen, so this icon is how you tell it is alive:
+
+| Action | Result |
+|---|---|
+| **Left click** | Expand the balance card |
+| **Right click** | Menu: show card / refresh now / top up / settings / launch at login / **Quit** |
+
+Do not want it? Settings → General → Menu bar icon. (Menu bar mode does not need it —
+its own item is the entry point.)
+
+**Do not want to launch it manually?** Settings → General → Launch at login. Verified working.
+
 ### Two modes, chosen automatically
 
 **There is nothing to pick during installation, and you do not need to know whether your Mac
@@ -166,7 +183,7 @@ Changes take effect immediately and are remembered.
 
 | | |
 |---|---|
-| **Quit** | Click the notch → slider icon → "Quit" |
+| **Quit** | Right-click the menu bar icon → Quit (or click the notch → slider icon → "Quit") |
 | **Launch at login** | Settings → General → Launch at login |
 | **Uninstall** | Delete `DSHNotch.app`. Preferences live in the UserDefaults domain `local.dsh.notch`; delete that too for a clean removal |
 
@@ -235,7 +252,7 @@ has no notch, the app falls back to menu bar mode and logs a line.
 
 ## Self-checks
 
-The project ships 8 self-checks, **none of which require eyes** — the development environment
+The project ships 9 self-checks, **none of which require eyes** — the development environment
 has no screen-recording permission, so every claim has to be verifiable by command:
 
 ```bash
@@ -247,6 +264,7 @@ $BIN --refreshcheck    # refresh policy: the 30-second throttle boundary
 $BIN --alertcheck      # alert rules: 8 threshold scenarios
 $BIN --costcheck       # "spent today": day rollover, gaps, bad values
 $BIN --settingscheck   # settings persistence
+$BIN --logincheck      # launch at login: can a login item be registered (reverts after)
 $BIN --panelcheck      # window placement + layer above the menu bar
 $BIN --clicktest       # click path + hit testing + content pixels + mid-animation sampling
 ```
@@ -265,9 +283,10 @@ DSH_NOTCH_TEST_ALERT=3 $BIN # simulate an alert 3 seconds after launch
 1. **Not signed or notarized.** First launch needs right-click → Open.
 2. **The API is rate limited.** HTTP 429 was hit during development; that is why opening the
    card is throttled to once per 30 seconds.
-3. **Launch at login is not verified on a real machine.** macOS may refuse to register a login
-   item for an unsigned app; if it fails the setting reverts to the actual system state.
-   You can always add it manually in System Settings → General → Login Items.
+3. **Launch at login has caveats for unsigned distribution.** Verified working with an ad-hoc
+   signature (`--logincheck`), but the app really needs to live in `/Applications` for it to make
+   sense. If macOS refuses, the setting reverts to the actual state; you can always add it
+   manually in System Settings → General → Login Items.
 4. **Window layering in full-screen and multi-display setups has not been visually verified.**
 5. **"Spent today" is reconstructed locally** — the platform has no per-day data.
 6. **arm64 only.**

@@ -377,10 +377,24 @@ struct BalanceCard: View {
                 SettingToggle(isOn: $settings.launchAtLogin)
             }
             .padding(.top, 12)
+
+            HStack {
+                Text("菜单栏图标")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.white.opacity(0.48))
+                Spacer(minLength: 0)
+                SettingToggle(isOn: $settings.showMenuBarIcon)
+            }
+            .padding(.top, 10)
+            Text("刘海形态下用它确认应用在运行，右键可刷新、充值、退出。")
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.28))
+                .padding(.top, 4)
+                .fixedSize(horizontal: false, vertical: true)
             Text("「自动」会用刘海形态（有刘海屏时），否则用菜单栏形态。切换显示器后自动重判。")
                 .font(.system(size: 9))
                 .foregroundStyle(.white.opacity(0.28))
-                .padding(.top, 12)
+                .padding(.top, 10)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

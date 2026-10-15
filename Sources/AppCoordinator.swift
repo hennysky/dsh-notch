@@ -33,6 +33,7 @@ final class AppCoordinator {
     lazy var model = BalanceModel(settings: settings)
 
     private var active: (any BalancePresenting)?
+    private var presence: PresenceItem?
     private var activeMode: EffectivePresentation?
     private var cancellables = Set<AnyCancellable>()
 
@@ -68,20 +69,28 @@ final class AppCoordinator {
             .removeDuplicates()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.applyLaunchAtLogin() } }
             .store(in: &cancellables)
+
+        settings.$showMenuBarIcon
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.applyMode(force: true) } }
+            .store(in: &cancellables)
     }
 
     /// 按偏好与当前屏幕决定形态
-    func applyMode() {
+    func applyMode(force: Bool = false) {
         let resolution = PresentationResolver.resolve(preference: settings.presentation,
                                                       screens: NSScreen.screens)
         if resolution.fellBack {
             dshLog("⚠️ 偏好「仅刘海」但当前没有刘海屏，退回菜单栏形态")
         }
-        guard resolution.mode != activeMode || active == nil else { return }
+        guard force || resolution.mode != activeMode || active == nil else { return }
 
         active?.tearDown()
         active = nil
         activeMode = nil
+        presence?.stop()
+        presence = nil
         model.isExpanded = false
 
         let presenter: any BalancePresenting
@@ -94,6 +103,17 @@ final class AppCoordinator {
         presenter.start()
         active = presenter
         activeMode = resolution.mode
+
+        // 刘海形态下屏幕上什么都不显示，需要一个菜单栏图标作为存在感与退出入口。
+        // 菜单栏形态不需要——那边的状态栏项本身就是入口，再来一个就重复了。
+        if resolution.mode == .notch, settings.showMenuBarIcon {
+            let item = PresenceItem(model: model, settings: settings,
+                                    onShowCard: { [weak self] in self?.active?.showCard() },
+                                    onOpenSettings: { [weak self] in self?.active?.openSettings() })
+            item.start()
+            presence = item
+        }
+
         dshLog("当前形态 = \(resolution.mode.rawValue)")
     }
 

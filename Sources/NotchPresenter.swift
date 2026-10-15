@@ -8,6 +8,10 @@ protocol BalancePresenting: AnyObject {
     func start()
     /// 额度提醒
     func presentAlert(_ alert: BalanceAlert)
+    /// 从菜单栏图标唤出卡片
+    func showCard()
+    /// 从菜单栏图标直接进设置
+    func openSettings()
     func tearDown()
 }
 
@@ -204,6 +208,17 @@ final class NotchPresenter: BalancePresenting {
     func toggle() {
         cancelAlertAutoCollapse()
         setExpanded(!model.isExpanded)
+    }
+
+    func showCard() {
+        cancelAlertAutoCollapse()
+        setExpanded(true)
+    }
+
+    func openSettings() {
+        cancelAlertAutoCollapse()
+        state.showSettings = true
+        setExpanded(true)
     }
 
     func setExpanded(_ expanded: Bool) {
