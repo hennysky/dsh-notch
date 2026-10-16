@@ -112,6 +112,14 @@ func runModeCheck() -> Int32 {
 //
 // 本项目没有屏幕录制权限，离屏渲染是唯一的视觉验证手段。
 
+private func setupArgument() -> BalanceModel.SetupIssue? {
+    for arg in CommandLine.arguments {
+        if arg == "--render-setup=none" { return .notConnected }
+        if arg == "--render-setup=signedout" { return .notSignedIn }
+    }
+    return nil
+}
+
 private func tabArgument() -> String {
     for arg in CommandLine.arguments where arg.hasPrefix("--tab=") {
         return String(arg.dropFirst("--tab=".count))
@@ -133,6 +141,9 @@ func runRenderCheck() -> Int32 {
                         cost: "555.1113852200000000",
                         today: unknownToday ? "0" : "2.63",
                         todayCertain: !unknownToday)
+
+    let setupCase = setupArgument()
+    if let setupCase { model.injectSetupIssue(setupCase) }
 
     var state = CardState()
     state.isExpanded = true
@@ -163,7 +174,8 @@ func runRenderCheck() -> Int32 {
     }
 
     let name: String
-    if unknownToday { name = "dsh-notch-unknown.png" }
+    if setupCase != nil { name = "dsh-notch-setup-\(setupCase == .notConnected ? "none" : "signedout").png" }
+    else if unknownToday { name = "dsh-notch-unknown.png" }
     else if isAlert { name = "dsh-notch-alert.png" }
     else if state.showSettings { name = "dsh-notch-settings-\(state.settingsTab.rawValue).png" }
     else if menuBarStyle { name = "dsh-notch-menubar.png" }
@@ -580,6 +592,50 @@ private func signatureDescription() -> String {
     return "\(identifier)\(adhoc ? "（adhoc）" : "")"
 }
 
+// MARK: - 引导态自检
+//
+// 发给别人时第一个撞上的场景就是「没有凭据」。用户不该看到一行文件路径，
+// 但也不能把所有错误都误判成引导态。
+
+@MainActor
+func runSetupCheck() -> Int32 {
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String) {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+
+    let missing = BalanceError.credential(
+        CredentialError.fileMissing(URL(fileURLWithPath: "/Users/someone/.dsh/.credentials.yaml")))
+    check("凭据文件不存在 → 引导「先装并登录 DSH」",
+          BalanceModel.setupIssue(from: missing) == .notConnected,
+          BalanceModel.setupIssue(from: missing).map { "\($0.title)" } ?? "未识别")
+
+    let signedOut = BalanceError.credential(
+        CredentialError.recordMissing("deepseek-account-platform/default"))
+    check("有凭据文件但没有登录记录 → 引导「去登录」",
+          BalanceModel.setupIssue(from: signedOut) == .notSignedIn,
+          BalanceModel.setupIssue(from: signedOut).map { "\($0.title)" } ?? "未识别")
+
+    check("网络/限流错误不误判为引导态",
+          BalanceModel.setupIssue(from: BalanceError.http(429)) == nil,
+          "429 → \(BalanceModel.setupIssue(from: BalanceError.http(429)).map { "\($0)" } ?? "nil（正确）")")
+
+    check("接口业务错误不误判为引导态",
+          BalanceModel.setupIssue(from: BalanceError.api(code: "1", message: "x")) == nil,
+          "api error → nil")
+
+    check("凭据字段缺失（格式变了）也引导「去登录」，而不是显示错误金额",
+          BalanceModel.setupIssue(from: BalanceError.credential(
+            CredentialError.fieldMissing("token"))) == nil,
+          "格式异常 → nil（走普通错误行，保留原始信息给用户反馈）")
+
+    print("")
+    print(failed == 0 ? "引导态判定全部通过" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
 // MARK: - 入口
 
 if CommandLine.arguments.contains("--version") {
@@ -606,6 +662,9 @@ if CommandLine.arguments.contains("--alertcheck") {
 }
 if CommandLine.arguments.contains("--costcheck") {
     exit(MainActor.assumeIsolated { runCostCheck() })
+}
+if CommandLine.arguments.contains("--setupcheck") {
+    exit(MainActor.assumeIsolated { runSetupCheck() })
 }
 if CommandLine.arguments.contains("--logincheck") {
     exit(MainActor.assumeIsolated { runLoginCheck() })

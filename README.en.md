@@ -34,7 +34,13 @@ no access to your account beyond what DSH already stores.**
 |---|---|
 | Hardware | Apple Silicon Mac (every MacBook with a notch is Apple Silicon) |
 | OS | macOS 14.0 or later |
-| Prerequisite | DeepSeek Harness installed and signed in — the balance comes from its stored credentials |
+| Prerequisite | **DeepSeek Harness installed and signed in** — the balance comes from its stored credentials |
+
+> **Without DSH installed this tool is useless to you** — it shows the guidance page below
+> instead of a balance. It reads the credentials on **your own machine**; it cannot see
+> anyone else's data.
+
+![Guidance when no account is connected](preview/setup-guide.png)
 
 ### Download
 
@@ -104,6 +110,19 @@ Do not want it? Settings → General → Menu bar icon. (Menu bar mode does not 
 its own item is the entry point.)
 
 **Do not want to launch it manually?** Settings → General → Launch at login. Verified working.
+
+### First launch: you need DSH connected
+
+The balance comes from the login credentials DSH stores. If they are not there yet
+(DSH not installed, or installed but not signed in), the card tells you what to do:
+
+| Situation | What the card shows |
+|---|---|
+| No credentials file | "No DSH login credentials found yet" + how to install and sign in |
+| Credentials present but no login record | "DSH is not signed in" + how to sign in |
+| Anything else (network, rate limit) | The normal error line — **never** mistaken for setup |
+
+Sign in and press "Check again"; no need to restart the app.
 
 ### Two modes, chosen automatically
 
@@ -241,6 +260,16 @@ No. There are exactly two network operations: the balance query (to DeepSeek's p
 opening the top-up page (handed to your browser; the link contains no token). Nothing is reported
 anywhere else.
 
+**Can I send this to a friend?**
+Yes — as long as **they also use DSH and are signed in**. The app reads
+`~/.dsh/.credentials.yaml` on their own machine and cannot see your data. Exactly one
+domain is hard-coded (`platform.deepseek.com`); nothing is sent anywhere else.
+
+One caveat: a package delivered via chat apps, AirDrop, or a browser download carries the
+"downloaded from the internet" flag, so **Gatekeeper will always block the first launch** —
+right-click → Open is required. Sending them the `curl` one-liner from this README is easier:
+`curl` does not set that flag.
+
 **Does it work on Intel Macs?**
 No — arm64 only. Every MacBook with a notch is Apple Silicon.
 
@@ -252,7 +281,7 @@ has no notch, the app falls back to menu bar mode and logs a line.
 
 ## Self-checks
 
-The project ships 9 self-checks, **none of which require eyes** — the development environment
+The project ships 10 self-checks, **none of which require eyes** — the development environment
 has no screen-recording permission, so every claim has to be verifiable by command:
 
 ```bash
@@ -265,6 +294,7 @@ $BIN --alertcheck      # alert rules: 8 threshold scenarios
 $BIN --costcheck       # "spent today": day rollover, gaps, bad values
 $BIN --settingscheck   # settings persistence
 $BIN --logincheck      # launch at login: can a login item be registered (reverts after)
+$BIN --setupcheck      # first-run guidance: classification of missing/signed-out credentials
 $BIN --panelcheck      # window placement + layer above the menu bar
 $BIN --clicktest       # click path + hit testing + content pixels + mid-animation sampling
 ```

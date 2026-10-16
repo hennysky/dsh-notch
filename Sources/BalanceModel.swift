@@ -12,6 +12,8 @@ final class BalanceModel: ObservableObject {
     @Published var isExpanded = false
     /// 今日消耗（本地用累计消费的差值推算）
     @Published private(set) var todayCost: Decimal?
+    /// 首次使用的引导态。凭据类失败单独呈现，不当作普通错误甩给用户。
+    @Published private(set) var setupIssue: SetupIssue?
 
     /// 轮询间隔：5 分钟。DSH 自身超时为 30s，不需要更频繁地打接口。
     let refreshInterval: TimeInterval = 300
@@ -71,10 +73,49 @@ final class BalanceModel: ObservableObject {
             let fresh = try await client.fetch()
             snapshot = fresh
             errorText = nil
+            setupIssue = nil
             updateDailyCost(fresh)
             evaluateAlert(fresh)
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            setupIssue = Self.setupIssue(from: error)
+        }
+    }
+
+    /// 凭据类失败的分类。发给别人时这是第一个会撞上的场景，
+    /// 不能只显示一行文件路径——用户不知道该怎么办。
+    enum SetupIssue: Equatable {
+        /// 这台机器上没有 DSH 的凭据文件：没装 DSH，或装了没登录
+        case notConnected
+        /// 有凭据文件，但里面没有登录记录
+        case notSignedIn
+
+        var title: String {
+            switch self {
+            case .notConnected: return "还没有找到 DSH 的登录凭据"
+            case .notSignedIn: return "DSH 还没有登录"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .notConnected:
+                return "请先安装并登录 DeepSeek Harness，再回来点「重新检查」。"
+            case .notSignedIn:
+                return "打开 DeepSeek Harness 登录一次，再回来点「重新检查」。"
+            }
+        }
+    }
+
+    /// internal 而非 private：`--setupcheck` 要直接验证分类结果。
+    static func setupIssue(from error: Error) -> SetupIssue? {
+        guard let balanceError = error as? BalanceError,
+              case .credential(let inner) = balanceError,
+              let credentialError = inner as? CredentialError else { return nil }
+        switch credentialError {
+        case .fileMissing: return .notConnected
+        case .recordMissing: return .notSignedIn
+        default: return nil
         }
     }
 
@@ -117,6 +158,9 @@ final class BalanceModel: ObservableObject {
                                       at: fresh.fetchedAt)
         if let alert { onAlert?(alert) }
     }
+
+    /// 仅供 `--render` 离屏预览使用：注入引导态。
+    func injectSetupIssue(_ issue: SetupIssue?) { setupIssue = issue }
 
     /// 仅供 `--render` 离屏预览使用：注入一份假快照，不发起网络请求。
     func injectPreview(normal: String, bonus: String, cost: String,

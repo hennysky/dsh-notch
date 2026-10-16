@@ -225,6 +225,8 @@ struct BalanceCard: View {
             header
             if state.showSettings {
                 settingsBody
+            } else if let issue = model.setupIssue {
+                setupBody(issue)
             } else {
                 balanceBody
             }
@@ -293,6 +295,46 @@ struct BalanceCard: View {
             detail("赠送钱包", model.bonusText)
             detail("累计消费", model.costText)
             detail("今日消耗", model.todayCostText)
+        }
+    }
+
+    /// 首次使用引导。发给别人时这是第一个会撞上的场景：
+    /// 对方没装过 DSH，之前只会看到一行文件路径，不知道该怎么办。
+    private func setupBody(_ issue: BalanceModel.SetupIssue) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(red: 1.00, green: 0.78, blue: 0.25))
+                Text(issue.title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+            }
+            .padding(.top, 12)
+
+            Text(issue.detail)
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+
+            Button {
+                Task { await model.refresh() }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 8.5, weight: .bold))
+                    Text(model.isRefreshing ? "检查中…" : "重新检查")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundStyle(.white.opacity(model.isRefreshing ? 0.4 : 0.9))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.white.opacity(0.14)))
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isRefreshing)
+            .padding(.top, 10)
         }
     }
 
@@ -426,7 +468,8 @@ struct BalanceCard: View {
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(alert.color)
                     }
-                } else if let errorText = model.errorText {
+                } else if let errorText = model.errorText, model.setupIssue == nil {
+                    // 引导态下不重复显示原始错误——那是给开发者看的，不是给用户看的
                     Text(errorText)
                         .font(.system(size: 9.5))
                         .foregroundStyle(Color(red: 1.0, green: 0.5, blue: 0.45))
@@ -434,15 +477,22 @@ struct BalanceCard: View {
                 }
 
                 HStack(spacing: 8) {
-                    Text(model.isStale && state.alert == nil ? "显示的是上次成功获取的数据" : model.updatedText)
+                    Text(footerStatusText)
                         .font(.system(size: 9.5))
                         .foregroundStyle(.white.opacity(0.32))
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    topUpButton
+                    // 引导态下不显示充值入口——账号都没连上，点了也没用
+                    if model.setupIssue == nil { topUpButton }
                 }
             }
         }
+    }
+
+    private var footerStatusText: String {
+        if model.setupIssue != nil { return "尚未连接账号" }
+        if model.isStale && state.alert == nil { return "显示的是上次成功获取的数据" }
+        return model.updatedText
     }
 
     private var topUpButton: some View {
