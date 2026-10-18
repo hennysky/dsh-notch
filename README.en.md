@@ -98,6 +98,9 @@ it reads the credentials DSH already stored on this machine and calls DeepSeek's
 
 Drag `DSHNotch.app` into `/Applications` and double-click it (right-click → Open the first time).
 
+**Or let it start together with DSH** — install the companion DSH plugin described in
+"Using it as a DSH plugin" below.
+
 Once running, **a card icon appears in the menu bar** — the app has no Dock icon and in notch
 mode draws nothing on screen, so this icon is how you tell it is alive:
 
@@ -207,6 +210,39 @@ Changes take effect immediately and are remembered.
 | **Uninstall** | Delete `DSHNotch.app`. Preferences live in the UserDefaults domain `local.dsh.notch`; delete that too for a clean removal |
 
 ---
+
+## Using it as a DSH plugin (optional)
+
+If DeepSeek Harness is always running, you can have the notch widget **start together with DSH**
+instead of launching it by hand.
+
+[`plugin/`](plugin/) is a DSH plugin. Once installed into a profile: DSH starts → the plugin
+activates → it makes sure `DSHNotch.app` is running.
+
+```bash
+DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
+"$DSH" plugin --profile desktop add /path/to/dsh-notch/plugin
+# restart DeepSeek Harness to activate
+```
+
+Verify:
+
+```bash
+cat "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.log"
+# [..] 已随 DSH 启动：/Applications/DSHNotch.app
+```
+
+Three behaviours: launches if not running; does nothing if already running (so a second notch
+window is never drawn); and skips quietly if the app is not where it is expected.
+
+### Why the plugin does not move the UI into DSH
+
+The notch overlay needs a window level above the menu bar, no border, a non-activating panel,
+and exclusion from Exposé and window cycling. Only a native `NSWindow` can do that — an Electron
+`BrowserWindow` cannot reach that level. So the plugin owns the **lifecycle** while
+`DSHNotch.app` keeps owning the UI.
+
+See [plugin/README.md](plugin/README.md) (Chinese).
 
 ## Where the data comes from
 

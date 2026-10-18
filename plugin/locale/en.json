@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Notch Balance",
+    "description": "Launches the DSHNotch balance widget whenever DeepSeek Harness starts. Requires DSHNotch and a signed-in DeepSeek Harness account."
+  }
+}

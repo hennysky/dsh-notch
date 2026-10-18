@@ -1,0 +1,6 @@
+- insert:
+    - id: notch-balance
+      name: 'dsh-plugin-notch-balance'
+      config:
+        appPath: /Applications/DSHNotch.app
+        quitOnUnload: false

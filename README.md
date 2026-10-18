@@ -94,6 +94,8 @@ xattr -dr com.apple.quarantine /Applications/DSHNotch.app
 
 把 `DSHNotch.app` 拖进「应用程序」，双击即可（首次需要右键 → 打开）。
 
+**或者让它跟着 DSH 一起启动** —— 装一个配套的 DSH 插件即可，见下面的「作为 DSH 插件使用」。
+
 启动之后**菜单栏会出现一个卡片图标**——应用不占 Dock，刘海形态下屏幕上也不显示东西，
 这个图标是用来确认「它在运行」的：
 
@@ -200,6 +202,37 @@ xattr -dr com.apple.quarantine /Applications/DSHNotch.app
 | **卸载** | 把 `DSHNotch.app` 删掉。配置存在 UserDefaults 域 `local.dsh.notch`，想彻底清干净就一并删除 |
 
 ---
+
+## 作为 DSH 插件使用（可选）
+
+如果你每天都开着 DeepSeek Harness，可以让刘海工具**跟着 DSH 一起启动**，不用单独双击。
+
+仓库里的 [`plugin/`](plugin/) 是一个 DSH 插件，装进 profile 后：DSH 启动 → 插件激活 →
+确保 `DSHNotch.app` 在跑。
+
+```bash
+DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
+"$DSH" plugin --profile desktop add /path/to/dsh-notch/plugin
+# 重启 DeepSeek Harness 生效
+```
+
+验证：
+
+```bash
+cat "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.log"
+# [..] 已随 DSH 启动：/Applications/DSHNotch.app
+```
+
+三种行为：应用没跑就启动；已在运行则不重复启动（避免画出第二个刘海窗口）；
+应用不在预期位置则安静跳过。
+
+### 为什么插件不把界面直接搬进 DSH
+
+刘海覆盖层要求窗口层级高于菜单栏、无边框、不抢焦点的 panel、排除出 Exposé 与窗口循环。
+这些只有原生 `NSWindow` 能做到，Electron 的 `BrowserWindow` 拿不到那个层级。
+所以插件负责**生命周期**，界面仍然由 `DSHNotch.app` 负责。
+
+详见 [plugin/README.md](plugin/README.md)。
 
 ## 数据从哪来
 
