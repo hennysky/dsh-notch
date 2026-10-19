@@ -31,11 +31,17 @@ enum LaunchAtLogin {
 final class AppCoordinator {
     let settings = NotchSettings()
     lazy var model = BalanceModel(settings: settings)
+    /// 本地通知桥（DSH 插件 POST 进来，转成系统通知）。
+    /// 设置项由桥在每次请求时实时读取，所以用户在设置里一关就立刻生效。
+    lazy var notifications = NotificationBridge(settings: settings)
+    /// 未读通知计数：横幅会消失，红点不会。
+    let unread = UnreadStore()
 
     private var active: (any BalancePresenting)?
     private var presence: PresenceItem?
     private var activeMode: EffectivePresentation?
     private var cancellables = Set<AnyCancellable>()
+    private var terminateObserver: NSObjectProtocol?
 
     deinit { dshLog("!!! AppCoordinator deinit —— 协调器被释放，形态会消失") }
 
@@ -50,6 +56,21 @@ final class AppCoordinator {
         model.onAlert = { [weak self] alert in self?.active?.presentAlert(alert) }
         applyMode()
         model.start()
+        // 通知桥独立于形态：端口被占用只记日志，不阻塞余额轮询
+        // 投递成功 → 未读 +1（菜单栏红点）；点开通知 → 未读清零
+        notifications.onDelivered = { [weak self] in self?.unread.markUnread() }
+        notifications.onNotificationClicked = { [weak self] in self?.unread.clear() }
+        notifications.start()
+
+        // 正常退出（菜单栏/卡片里的「退出应用」）时先收掉监听端口。
+        // 进程被杀时系统会回收 socket，这里覆盖的是走 NSApp.terminate 的路径。
+        terminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stop() }
+        }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -77,6 +98,20 @@ final class AppCoordinator {
             .store(in: &cancellables)
     }
 
+    /// 退出前收尾：停桥、停轮询、撤掉呈现层。
+    func stop() {
+        notifications.stop()
+        model.stop()
+        active?.tearDown()
+        active = nil
+        presence?.stop()
+        presence = nil
+        if let terminateObserver {
+            NotificationCenter.default.removeObserver(terminateObserver)
+            self.terminateObserver = nil
+        }
+    }
+
     /// 按偏好与当前屏幕决定形态
     func applyMode(force: Bool = false) {
         let resolution = PresentationResolver.resolve(preference: settings.presentation,
@@ -96,9 +131,9 @@ final class AppCoordinator {
         let presenter: any BalancePresenting
         switch resolution.mode {
         case .notch:
-            presenter = NotchPresenter(model: model, settings: settings)
+            presenter = NotchPresenter(model: model, settings: settings, unread: unread)
         case .menuBar:
-            presenter = MenuBarPresenter(model: model, settings: settings)
+            presenter = MenuBarPresenter(model: model, settings: settings, unread: unread)
         }
         presenter.start()
         active = presenter
@@ -107,7 +142,7 @@ final class AppCoordinator {
         // 刘海形态下屏幕上什么都不显示，需要一个菜单栏图标作为存在感与退出入口。
         // 菜单栏形态不需要——那边的状态栏项本身就是入口，再来一个就重复了。
         if resolution.mode == .notch, settings.showMenuBarIcon {
-            let item = PresenceItem(model: model, settings: settings,
+            let item = PresenceItem(model: model, settings: settings, unread: unread,
                                     onShowCard: { [weak self] in self?.active?.showCard() },
                                     onOpenSettings: { [weak self] in self?.active?.openSettings() })
             item.start()

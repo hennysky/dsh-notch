@@ -4,3 +4,6 @@
       config:
         appPath: /Applications/DSHNotch.app
         quitOnUnload: false
+        notify: true
+        bridgePort: 47810
+        notifyAborted: false

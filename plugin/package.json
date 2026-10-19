@@ -1,8 +1,8 @@
 {
   "name": "dsh-plugin-notch-balance",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Launches the DSHNotch balance widget when DeepSeek Harness starts.",
+  "description": "Launches the DSHNotch balance widget when DeepSeek Harness starts, and bridges DSH session events to native macOS notifications.",
   "type": "module",
   "exports": {
     ".": "./index.js",

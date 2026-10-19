@@ -68,6 +68,10 @@ final class NotchSettings: ObservableObject {
     @Published var launchAtLogin: Bool { didSet { persist() } }
     /// 刘海形态下是否显示菜单栏图标（存在感与退出入口）
     @Published var showMenuBarIcon: Bool { didSet { persist() } }
+    /// 任务结束时发系统通知（kind = turn-end）
+    @Published var notifyTaskDone: Bool { didSet { persist() } }
+    /// 需要用户处理时发系统通知（kind = attention）
+    @Published var notifyAttention: Bool { didSet { persist() } }
 
     private enum Key {
         static let duration = "dshNotch.animationDuration"
@@ -78,6 +82,8 @@ final class NotchSettings: ObservableObject {
         static let presentation = "dshNotch.presentation"
         static let launchAtLogin = "dshNotch.launchAtLogin"
         static let showMenuBarIcon = "dshNotch.showMenuBarIcon"
+        static let notifyTaskDone = "dshNotch.notifyTaskDone"
+        static let notifyAttention = "dshNotch.notifyAttention"
     }
 
     init() {
@@ -96,6 +102,10 @@ final class NotchSettings: ObservableObject {
         launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
         // 默认开：没有它，刘海形态下应用启动了也看不出任何迹象
         showMenuBarIcon = defaults.object(forKey: Key.showMenuBarIcon) as? Bool ?? true
+        // 通知两项默认都开：用户装这个应用就是为了「不知道的时候能被告知」，
+        // 默认关掉等于新功能不存在。
+        notifyTaskDone = defaults.object(forKey: Key.notifyTaskDone) as? Bool ?? true
+        notifyAttention = defaults.object(forKey: Key.notifyAttention) as? Bool ?? true
     }
 
     private static func stored(_ defaults: UserDefaults, _ key: String,
@@ -113,6 +123,8 @@ final class NotchSettings: ObservableObject {
             && presentation == .automatic
             && !launchAtLogin
             && showMenuBarIcon
+            && notifyTaskDone
+            && notifyAttention
     }
 
     func reset() {
@@ -123,6 +135,8 @@ final class NotchSettings: ObservableObject {
         alertDuration = Self.defaultAlertDuration
         presentation = .automatic
         showMenuBarIcon = true
+        notifyTaskDone = true
+        notifyAttention = true
     }
 
     private func persist() {
@@ -135,6 +149,8 @@ final class NotchSettings: ObservableObject {
         defaults.set(presentation.rawValue, forKey: Key.presentation)
         defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
         defaults.set(showMenuBarIcon, forKey: Key.showMenuBarIcon)
+        defaults.set(notifyTaskDone, forKey: Key.notifyTaskDone)
+        defaults.set(notifyAttention, forKey: Key.notifyAttention)
     }
 
     // MARK: - 展示

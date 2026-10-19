@@ -253,7 +253,7 @@ func runClickTest() -> Int32 {
     let settings = NotchSettings()
     let model = BalanceModel(settings: settings)
     // 只测呈现层，不启动轮询：真实余额触发的额度提醒会弹开卡片，污染状态断言
-    let presenter = NotchPresenter(model: model, settings: settings)
+    let presenter = NotchPresenter(model: model, settings: settings, unread: UnreadStore())
     presenter.start()
 
     RunLoop.main.run(until: Date().addingTimeInterval(0.5))
@@ -455,7 +455,8 @@ func runSettingsCheck() -> Int32 {
     let settings = NotchSettings()
     let original = (settings.animationDuration, settings.easing,
                     settings.lowBalanceThreshold, settings.burnThreshold,
-                    settings.alertDuration, settings.presentation)
+                    settings.alertDuration, settings.presentation,
+                    settings.notifyTaskDone, settings.notifyAttention)
     defer {
         settings.animationDuration = original.0
         settings.easing = original.1
@@ -463,6 +464,8 @@ func runSettingsCheck() -> Int32 {
         settings.burnThreshold = original.3
         settings.alertDuration = original.4
         settings.presentation = original.5
+        settings.notifyTaskDone = original.6
+        settings.notifyAttention = original.7
     }
 
     var failed = 0
@@ -476,6 +479,8 @@ func runSettingsCheck() -> Int32 {
     settings.easing = .linear
     settings.lowBalanceThreshold = 25
     settings.presentation = .menuBar
+    settings.notifyTaskDone = false
+    settings.notifyAttention = false
 
     let reloaded = NotchSettings()
     check("动画时长持久化", abs(reloaded.animationDuration - 0.77) < 0.001,
@@ -485,11 +490,16 @@ func runSettingsCheck() -> Int32 {
           "写入 25，读出 \(reloaded.lowBalanceThreshold)")
     check("呈现形态持久化", reloaded.presentation == .menuBar,
           "写入 menuBar，读出 \(reloaded.presentation.rawValue)")
+    check("任务完成通知开关持久化", !reloaded.notifyTaskDone,
+          "写入 false，读出 \(reloaded.notifyTaskDone)")
+    check("需要处理通知开关持久化", !reloaded.notifyAttention,
+          "写入 false，读出 \(reloaded.notifyAttention)")
 
     settings.reset()
     check("恢复默认", settings.isDefault,
           "动画 \(settings.animationDuration)s / 形态 \(settings.presentation.rawValue) / "
-          + "余额<\(settings.lowBalanceThreshold) / 消耗>\(settings.burnThreshold)")
+          + "余额<\(settings.lowBalanceThreshold) / 消耗>\(settings.burnThreshold) / "
+          + "通知 完成=\(settings.notifyTaskDone) 处理=\(settings.notifyAttention)")
 
     print("")
     print(failed == 0 ? "设置项读写正常" : "\(failed) 项失败")
@@ -636,6 +646,358 @@ func runSetupCheck() -> Int32 {
     return failed == 0 ? 0 : 1
 }
 
+// MARK: - 通知桥自检
+//
+// 通知桥是一条独立于界面的本地 HTTP 服务，必须能在无人工点击的情况下验证：
+// 起桥 → 自己发 GET /health、POST /notify（合法/过滤/重复/非法）、错误方法与未知路径，
+// 断言状态码与 JSON 字段。真实通知投递用投递探针替换，避免自检往通知中心弹通知。
+
+/// 投递探针：断言 `shown:true` 确实走到了投递层，且超长文本按文档截断。
+final class DeliverySpy: @unchecked Sendable {
+    private(set) var payloads: [NotificationPayload] = []
+
+    func record(_ payload: NotificationPayload) {
+        payloads.append(payload)
+    }
+}
+
+/// 自检的完成标志。跨 MainActor 闭包和轮询循环读写，和 `ResultBox` 同样处理。
+final class NotifyCheckState: @unchecked Sendable {
+    var failed = 0
+    var finished = false
+}
+
+/// 自检用：统计桥的 `onDelivered` 回调次数（未读红点的触发源）。
+final class DeliveryCounter: @unchecked Sendable {
+    var value = 0
+}
+
+private struct HTTPCheckResponse {
+    let status: Int
+    let json: [String: Any]?
+    let text: String
+}
+
+private enum HTTPCheckClient {
+    static func request(port: UInt16, method: String, path: String,
+                        body: Data? = nil) async -> HTTPCheckResponse? {
+        guard let url = URL(string: "http://127.0.0.1:\(port)\(path)") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 6
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            return HTTPCheckResponse(status: status,
+                                     json: (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                                     text: String(data: data, encoding: .utf8) ?? "")
+        } catch {
+            return nil
+        }
+    }
+
+    static func postJSON(port: UInt16, _ object: [String: Any]) async -> HTTPCheckResponse? {
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+        return await request(port: port, method: "POST", path: "/notify", body: data)
+    }
+}
+
+@MainActor
+private func waitForBridge(_ bridge: NotificationBridge, timeout: TimeInterval) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !bridge.isListening && Date() < deadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    }
+    return bridge.isListening
+}
+
+@MainActor
+func runNotifyCheck() -> Int32 {
+    _ = NSApplication.shared
+
+    // 自检会改这两项设置来验证过滤，跑完必须还原（UserDefaults 是全局的）
+    let settings = NotchSettings()
+    let original = (settings.notifyTaskDone, settings.notifyAttention)
+    defer {
+        settings.notifyTaskDone = original.0
+        settings.notifyAttention = original.1
+    }
+
+    let spy = DeliverySpy()
+    let delivered = DeliveryCounter()
+    // 授权状态注入为 authorized：自检不应依赖用户有没有在系统弹窗上点过「允许」
+    let makeBridge: (UInt16) -> NotificationBridge = { port in
+        let bridge = NotificationBridge(settings: settings,
+                                        port: port,
+                                        requestsAuthorization: false,
+                                        authorizationOverride: { .authorized },
+                                        deliveryOverride: { spy.record($0) })
+        // 未读红点的触发源：投递成功必须回调一次
+        bridge.onDelivered = { delivered.value += 1 }
+        return bridge
+    }
+
+    var bridge = makeBridge(NotificationBridge.defaultPort)
+    bridge.start()
+
+    if !waitForBridge(bridge, timeout: 4) {
+        // 默认端口被另一个 DSHNotch 占着是合法场景（应用正在运行），
+        // 退回临时端口继续验证协议本身，不把「端口忙」误判成功能坏了。
+        bridge.stop()
+        print("· 127.0.0.1:\(NotificationBridge.defaultPort) 未监听（可能已被另一个 DSHNotch 占用），"
+              + "改用临时端口继续")
+        bridge = makeBridge(0)
+        bridge.start()
+        guard waitForBridge(bridge, timeout: 4) else {
+            print("✗ 通知桥未能启动")
+            bridge.stop()
+            return 1
+        }
+    }
+
+    let port = bridge.boundPort ?? NotificationBridge.defaultPort
+    print("通知桥监听 127.0.0.1:\(port)")
+    print("")
+
+    let state = NotifyCheckState()
+    Task { @MainActor in
+        state.failed = await runNotifyProtocolChecks(port: port, settings: settings,
+                                                     spy: spy, delivered: delivered)
+        state.finished = true
+    }
+
+    // 桥的请求处理在主线程，自检必须让出主 runloop，不能用信号量干等
+    let deadline = Date().addingTimeInterval(30)
+    while !state.finished && Date() < deadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    }
+    bridge.stop()
+
+    if !state.finished {
+        print("✗ 自检超时（30s）")
+        return 1
+    }
+    print("")
+    print(state.failed == 0 ? "通知桥协议自检全部通过" : "\(state.failed) 项失败")
+    return state.failed == 0 ? 0 : 1
+}
+
+@MainActor
+private func runNotifyProtocolChecks(port: UInt16, settings: NotchSettings,
+                                     spy: DeliverySpy, delivered: DeliveryCounter) async -> Int {
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String) {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+    func describe(_ response: HTTPCheckResponse?) -> String {
+        guard let response else { return "请求失败（连不上桥）" }
+        return "HTTP \(response.status) \(response.text)"
+    }
+    func shown(_ response: HTTPCheckResponse?) -> Bool? {
+        response?.json?["shown"] as? Bool
+    }
+    func reason(_ response: HTTPCheckResponse?) -> String? {
+        response?.json?["reason"] as? String
+    }
+
+    // 1. /health
+    if let health = await HTTPCheckClient.request(port: port, method: "GET", path: "/health") {
+        let json = health.json
+        let ok = health.status == 200
+            && (json?["ok"] as? Bool) == true
+            && (json?["app"] as? String) == "DSHNotch"
+            && ((json?["version"] as? String)?.isEmpty == false)
+            && ((json?["authorization"] as? String)?.isEmpty == false)
+        check("GET /health → 200 且 ok/app/version/authorization 齐全", ok, describe(health))
+        print("    真实授权状态 authorization=\(json?["authorization"] as? String ?? "(缺失)")")
+    } else {
+        check("GET /health 有响应", false, "请求失败（连不上桥）")
+    }
+
+    // 2. 合法 POST：任务未处理提示，默认设置开着
+    settings.notifyAttention = true
+    let attention = await HTTPCheckClient.postJSON(port: port, [
+        "kind": "attention",
+        "title": "自检通知",
+        "body": "这是一条来自 --notifycheck 的测试通知",
+        "sessionId": "session-notifycheck",
+        "dedupeKey": "notifycheck-attention",
+    ])
+    check("POST /notify 合法请求 → 200 shown=true",
+          attention?.status == 200 && (attention?.json?["ok"] as? Bool) == true && shown(attention) == true,
+          describe(attention))
+
+    check("shown=true 的请求真的交给了投递层", spy.payloads.count == 1,
+          "投递层收到 \(spy.payloads.count) 条")
+
+    check("投递成功触发未读回调（onDelivered）", delivered.value == 1,
+          "onDelivered 调用 \(delivered.value) 次")
+
+    // 3. dedupeKey 5 秒内去重
+    let duplicated = await HTTPCheckClient.postJSON(port: port, [
+        "kind": "attention",
+        "title": "自检通知",
+        "body": "这是一条来自 --notifycheck 的测试通知",
+        "dedupeKey": "notifycheck-attention",
+    ])
+    check("相同 dedupeKey 5 秒内 → shown=false reason=duplicate",
+          duplicated?.status == 200 && shown(duplicated) == false && reason(duplicated) == "duplicate",
+          describe(duplicated))
+
+    // 4. 设置过滤：任务完成通知关闭
+    settings.notifyTaskDone = false
+    let taskDone = await HTTPCheckClient.postJSON(port: port, [
+        "kind": "turn-end", "title": "任务完成", "body": "自检：任务完成通知已关闭",
+    ])
+    check("关闭「任务完成通知」→ shown=false reason=disabled",
+          taskDone?.status == 200 && shown(taskDone) == false && reason(taskDone) == "disabled",
+          describe(taskDone))
+
+    // 5. 设置过滤：需要处理通知关闭
+    settings.notifyTaskDone = true
+    settings.notifyAttention = false
+    let attentionOff = await HTTPCheckClient.postJSON(port: port, [
+        "kind": "attention", "title": "需要你确认", "body": "自检：需要处理通知已关闭",
+    ])
+    check("关闭「需要处理通知」→ shown=false reason=disabled",
+          attentionOff?.status == 200 && shown(attentionOff) == false && reason(attentionOff) == "disabled",
+          describe(attentionOff))
+    settings.notifyAttention = true
+
+    // 6. 恢复开关后任务完成通知能发
+    let taskDoneOn = await HTTPCheckClient.postJSON(port: port, [
+        "kind": "turn-end", "title": "任务完成", "body": "自检：恢复开关后应投递",
+    ])
+    check("恢复开关后 turn-end → shown=true",
+          taskDoneOn?.status == 200 && shown(taskDoneOn) == true, describe(taskDoneOn))
+
+    // 7. 超长字段截断（文档：title ≤ 120、body ≤ 500）
+    let longTitle = String(repeating: "长", count: 150)
+    let longBody = String(repeating: "文", count: 600)
+    let long = await HTTPCheckClient.postJSON(port: port, [
+        "kind": "attention", "title": longTitle, "body": longBody,
+    ])
+    let deliveredTitle = spy.payloads.last?.title.count ?? -1
+    let deliveredBody = spy.payloads.last?.body.count ?? -1
+    check("超长 title/body 截断到 120/500 后照常投递",
+          shown(long) == true && deliveredTitle == 120 && deliveredBody == 500,
+          "title \(deliveredTitle) 字符，body \(deliveredBody) 字符")
+
+    // 8. 非法 JSON
+    let invalidJSON = await HTTPCheckClient.request(port: port, method: "POST", path: "/notify",
+                                                    body: Data("{not json".utf8))
+    check("非法 JSON → 400 ok=false",
+          invalidJSON?.status == 400 && (invalidJSON?.json?["ok"] as? Bool) == false
+            && ((invalidJSON?.json?["error"] as? String)?.isEmpty == false),
+          describe(invalidJSON))
+
+    // 9. 缺必填字段
+    let missing = await HTTPCheckClient.postJSON(port: port, ["kind": "attention", "title": "只有标题"])
+    check("缺 body → 400 ok=false",
+          missing?.status == 400 && (missing?.json?["ok"] as? Bool) == false,
+          describe(missing))
+
+    // 10. kind 取值非法
+    let badKind = await HTTPCheckClient.postJSON(port: port,
+                                                 ["kind": "something", "title": "x", "body": "y"])
+    check("kind 非法 → 400 ok=false",
+          badKind?.status == 400 && (badKind?.json?["ok"] as? Bool) == false,
+          describe(badKind))
+
+    // 11. 未知路径
+    let unknown = await HTTPCheckClient.request(port: port, method: "GET", path: "/nope")
+    check("未知路径 → 404 ok=false",
+          unknown?.status == 404 && (unknown?.json?["ok"] as? Bool) == false, describe(unknown))
+
+    // 12. 方法错误
+    let wrongNotify = await HTTPCheckClient.request(port: port, method: "GET", path: "/notify")
+    check("GET /notify → 405 ok=false",
+          wrongNotify?.status == 405 && (wrongNotify?.json?["ok"] as? Bool) == false,
+          describe(wrongNotify))
+
+    let wrongHealth = await HTTPCheckClient.request(port: port, method: "POST", path: "/health",
+                                                    body: Data("{}".utf8))
+    check("POST /health → 405 ok=false",
+          wrongHealth?.status == 405 && (wrongHealth?.json?["ok"] as? Bool) == false,
+          describe(wrongHealth))
+
+    return failed
+}
+
+// MARK: - 未读计数自检
+//
+// 横幅只停留几秒，用户错过就没有下文；未读红点补的正是这一段。
+// 计数本身是纯逻辑，可以脱离 UI 钉住。
+
+@MainActor
+func runUnreadCheck() -> Int32 {
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String) {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+
+    let store = UnreadStore()
+    check("初始未读为 0", store.count == 0 && !store.hasUnread,
+          "count=\(store.count) hasUnread=\(store.hasUnread)")
+
+    store.markUnread()
+    store.markUnread()
+    store.markUnread()
+    check("连续 3 条通知 → 未读 3", store.count == 3 && store.hasUnread,
+          "count=\(store.count) hasUnread=\(store.hasUnread)")
+
+    store.clear()
+    check("打开卡片后清零", store.count == 0 && !store.hasUnread,
+          "count=\(store.count) hasUnread=\(store.hasUnread)")
+
+    store.clear()
+    check("重复清零不出负数", store.count == 0, "count=\(store.count)")
+
+    // 红点是这个功能唯一可见的证据，必须验证它真的被画出来了，
+    // 而不是只验证「调用了 updateIcon」。
+    _ = NSApplication.shared
+    check("未读图标的右上角有红色像素", redPixelCount(PresenceItem.iconImage(unread: true)) > 0,
+          "红色像素 \(redPixelCount(PresenceItem.iconImage(unread: true)))")
+    check("无未读时图标不带红点（保持模板单色）",
+          redPixelCount(PresenceItem.iconImage(unread: false)) == 0,
+          "红色像素 \(redPixelCount(PresenceItem.iconImage(unread: false)))")
+    check("无未读图标仍是 template（跟随菜单栏明暗）",
+          PresenceItem.iconImage(unread: false)?.isTemplate == true,
+          "isTemplate=\(PresenceItem.iconImage(unread: false)?.isTemplate == true)")
+
+    print("")
+    print(failed == 0 ? "未读计数全部通过" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
+/// 统计一张图里「明显的红色」像素数。用于验证未读红点真的画出来了。
+func redPixelCount(_ image: NSImage?) -> Int {
+    guard let image,
+          let tiff = image.tiffRepresentation,
+          let rep = NSBitmapImageRep(data: tiff) else { return 0 }
+    var count = 0
+    for y in 0..<rep.pixelsHigh {
+        for x in 0..<rep.pixelsWide {
+            guard let color = rep.colorAt(x: x, y: y) else { continue }
+            if color.alphaComponent > 0.3,
+               color.redComponent > 0.6,
+               color.greenComponent < 0.45,
+               color.blueComponent < 0.45 {
+                count += 1
+            }
+        }
+    }
+    return count
+}
+
 // MARK: - 入口
 
 if CommandLine.arguments.contains("--version") {
@@ -674,6 +1036,12 @@ if CommandLine.arguments.contains("--refreshcheck") {
 }
 if CommandLine.arguments.contains("--settingscheck") {
     exit(MainActor.assumeIsolated { runSettingsCheck() })
+}
+if CommandLine.arguments.contains("--notifycheck") {
+    exit(MainActor.assumeIsolated { runNotifyCheck() })
+}
+if CommandLine.arguments.contains("--unreadcheck") {
+    exit(MainActor.assumeIsolated { runUnreadCheck() })
 }
 
 // MARK: - 正常启动

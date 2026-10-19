@@ -105,9 +105,12 @@ final class NotchPresenter: BalancePresenting {
     private var state = CardState()
     private var alertCollapseWork: DispatchWorkItem?
 
-    init(model: BalanceModel, settings: NotchSettings) {
+    private let unread: UnreadStore
+
+    init(model: BalanceModel, settings: NotchSettings, unread: UnreadStore) {
         self.model = model
         self.settings = settings
+        self.unread = unread
     }
 
     func start() {
@@ -207,16 +210,20 @@ final class NotchPresenter: BalancePresenting {
 
     func toggle() {
         cancelAlertAutoCollapse()
+        // 打开卡片 = 用户来看结果了，未读红点没有继续存在的理由
+        unread.clear()
         setExpanded(!model.isExpanded)
     }
 
     func showCard() {
         cancelAlertAutoCollapse()
+        unread.clear()
         setExpanded(true)
     }
 
     func openSettings() {
         cancelAlertAutoCollapse()
+        unread.clear()
         state.showSettings = true
         setExpanded(true)
     }

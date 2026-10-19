@@ -17,10 +17,12 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
     private var cancellables = Set<AnyCancellable>()
     private var state = CardState()
     private var alertResetWork: DispatchWorkItem?
+    private let unread: UnreadStore
 
-    init(model: BalanceModel, settings: NotchSettings) {
+    init(model: BalanceModel, settings: NotchSettings, unread: UnreadStore) {
         self.model = model
         self.settings = settings
+        self.unread = unread
     }
 
     deinit { dshLog("!!! MenuBarPresenter deinit —— 状态栏项会被一并回收") }
@@ -51,6 +53,11 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
             .store(in: &cancellables)
         settings.objectWillChange
             .sink { [weak self] in DispatchQueue.main.async { self?.refresh() } }
+            .store(in: &cancellables)
+
+        // 未读数变化只影响标题（红点），不需要重建 popover 内容
+        unread.objectWillChange
+            .sink { [weak self] in DispatchQueue.main.async { self?.updateTitle() } }
             .store(in: &cancellables)
 
         // 状态栏项不通过 CGWindowList 暴露（你菜单栏里其它图标也一样），
@@ -124,11 +131,24 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
             text = model.amountText
             color = .labelColor
         }
-        button.attributedTitle = NSAttributedString(string: text,
-                                                    attributes: [.font: font, .foregroundColor: color])
-        button.toolTip = "DSHNotch \(appVersion())"
+        // 横幅会消失，红点不会：有未读通知时在金额后面点一个红点，
+        // 直到用户打开卡片（或点开系统通知）才清掉。
+        let title = NSMutableAttributedString(
+            string: text,
+            attributes: [.font: font, .foregroundColor: color]
+        )
+        if unread.hasUnread {
+            title.append(NSAttributedString(
+                string: " ●",
+                attributes: [.font: NSFont.systemFont(ofSize: 10, weight: .bold),
+                             .foregroundColor: NSColor.systemRed]
+            ))
+        }
+        button.attributedTitle = title
+        let unreadNote = unread.hasUnread ? " · \(unread.count) 条未读通知" : ""
+        button.toolTip = "DSHNotch \(appVersion())\(unreadNote)"
         let windowVisible = button.window?.isVisible ?? false
-        dshLog("菜单栏标题=\"\(text)\" 可见=\(windowVisible) 宽=\(button.window?.frame.width ?? 0)")
+        dshLog("菜单栏标题=\"\(title.string)\" 可见=\(windowVisible) 宽=\(button.window?.frame.width ?? 0)")
     }
 
     // MARK: - 交互
@@ -148,6 +168,8 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
         if popover.isShown {
             popover.performClose(nil)
         } else {
+            // 打开卡片 = 已读：红点在这里清掉
+            unread.clear()
             model.refreshIfStale()   // 点开就该看到最新余额
             state.isExpanded = true
             updateTitle()

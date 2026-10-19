@@ -7,6 +7,10 @@
 Click the notch (or the menu bar item) to see your balance. When it drops below a threshold,
 or when a single top-up burn is unusually large, DSHNotch pops up to tell you.
 
+With the companion plugin installed, it also posts macOS notifications when a DSH task
+finishes, or when the agent stops and waits for your approval or answer — so you can walk
+away during a long task.
+
 | MacBook with a notch | Any other Mac (Mac mini / iMac / external display) |
 |---|---|
 | ![Notch mode](preview/balance.png) | ![Menu bar mode](preview/menubar.png) |
@@ -189,15 +193,62 @@ The balance is hidden behind the notch, so there are two rules that speak up on 
 > Why does "balance below" fire only once? Because polling runs every 5 minutes; alerting on
 > "is currently low" would mean a popup every 5 minutes. Recharging above the threshold re-arms it.
 
+### DSH notifications (v1.4)
+
+The DSH desktop app has no system notifications of its own: when a task finishes, or when the
+agent stops and waits for approval, you have no way to know unless you are looking at the window.
+With the companion plugin ([`plugin/`](plugin/), v1.1.0+) these events become macOS
+notifications from DSHNotch:
+
+| When | Notification |
+|---|---|
+| A DSH turn finishes | "任务完成" with the session name and elapsed time |
+| The turn fails / is blocked / hits the length limit | the matching title, with the error message on failure |
+| The agent waits for approval | "需要你确认" with the tool name and reason |
+| The agent asks a question | "需要你回答" with the question text |
+
+- **Clicking a notification switches back to DeepSeek Harness** (launching it if it is not running)
+- **Banners disappear, the red dot does not**: a new notification puts a red dot on the menu bar
+  icon (in menu bar mode, after the amount as `●`) and it stays until you open the card or click
+  the notification — so being away from the screen no longer means missing it for good
+- macOS asks for notification permission once; you can revoke it in System Settings → Notifications
+  → DSH Notch, or turn off "task finished" / "needs attention" separately in the card's
+  **Notifications** page
+- Turns you cancelled yourself are not announced (you already know); subagent turns are not
+  announced separately
+- Notifications carry DSHNotch's own identity — not "Script Editor"
+
+How it works: the plugin listens to session events inside DSH → `POST 127.0.0.1:47810/notify` →
+DSHNotch delivers through `UNUserNotificationCenter`. The listener binds loopback only; when the
+plugin is missing or not loaded, the rest of DSHNotch is unaffected. Protocol and design:
+[docs/dsh-notifications.md](docs/dsh-notifications.md) (Chinese).
+
+If a notification does not appear, check in this order:
+
+```bash
+curl -s http://127.0.0.1:47810/health
+# {"app":"DSHNotch","authorization":"authorized","ok":true,"version":"1.4"}
+
+grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.log"
+```
+
+| Symptom | Cause |
+|---|---|
+| curl cannot connect | DSHNotch is not running (or another instance holds the port) |
+| `authorization` is not `authorized` | notification permission is off |
+| No "已注册 3 个监听" in the log | the plugin is still the old version: restart DSH once |
+| `HTTP 200 … shown:false` in the log | the matching toggle is off in the card settings |
+
 ### Settings
 
-Click the slider icon in the card header. Three pages:
+Click the slider icon in the card header. Four pages:
 
 | Page | Contents |
 |---|---|
 | **Alerts** | Low-balance threshold, single-burn threshold, how long alerts stay up |
 | **Animation** | Expand/collapse duration and easing curve |
 | **General** | Presentation mode, launch at login |
+| **Notifications** | Task-finished notifications, needs-attention notifications (sent by the DSH plugin) |
 
 Changes take effect immediately and are remembered.
 
@@ -216,8 +267,11 @@ Changes take effect immediately and are remembered.
 If DeepSeek Harness is always running, you can have the notch widget **start together with DSH**
 instead of launching it by hand.
 
-[`plugin/`](plugin/) is a DSH plugin. Once installed into a profile: DSH starts → the plugin
-activates → it makes sure `DSHNotch.app` is running.
+[`plugin/`](plugin/) is a DSH plugin. Once installed into a profile it does two things:
+
+1. **Lifecycle**: DSH starts → the plugin activates → it makes sure `DSHNotch.app` is running;
+2. **Notification bridge** (v1.1.0+): it POSTs DSH's turn-finished / approval / question events
+   to DSHNotch, which turns them into macOS notifications (see "DSH notifications" above).
 
 ```bash
 DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
@@ -230,10 +284,13 @@ Verify:
 ```bash
 cat "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.log"
 # [..] 已随 DSH 启动：/Applications/DSHNotch.app
+# [..] 通知：已注册 3 个监听（桥端口 47810）
 ```
 
-Three behaviours: launches if not running; does nothing if already running (so a second notch
-window is never drawn); and skips quietly if the app is not where it is expected.
+Launch behaviour: starts the app when it is not running; does nothing when it is already running
+(so a second notch window is never drawn); and skips quietly when the app is not where it is
+expected. **Plugin code changes need a DSH restart** — Host plugins are not hot-reloaded like the
+Web UI.
 
 ### Why the plugin does not move the UI into DSH
 
@@ -317,7 +374,7 @@ has no notch, the app falls back to menu bar mode and logs a line.
 
 ## Self-checks
 
-The project ships 10 self-checks, **none of which require eyes** — the development environment
+The project ships 12 self-checks, **none of which require eyes** — the development environment
 has no screen-recording permission, so every claim has to be verifiable by command:
 
 ```bash
@@ -333,6 +390,8 @@ $BIN --logincheck      # launch at login: can a login item be registered (revert
 $BIN --setupcheck      # first-run guidance: classification of missing/signed-out credentials
 $BIN --panelcheck      # window placement + layer above the menu bar
 $BIN --clicktest       # click path + hit testing + content pixels + mid-animation sampling
+$BIN --notifycheck     # notification bridge protocol: /health, /notify, dedupe, truncation, error codes
+$BIN --unreadcheck     # unread badge: counting / clearing / the icon really contains red pixels
 ```
 
 Two extra switches for debugging display issues:
@@ -358,6 +417,14 @@ DSH_NOTCH_TEST_ALERT=3 $BIN # simulate an alert 3 seconds after launch
 6. **arm64 only.**
 7. **The credentials come from a DSH-internal file** whose format may change between DSH
    versions. A parse failure produces a clear error rather than a silently wrong number.
+8. **Notifications require plugin v1.1.0+.** Plugin code is loaded when DSH starts, so restart DSH
+   once after upgrading the plugin; upgrading DSHNotch itself does not need a DSH restart.
+9. **Notifications cover root sessions only**: subagent turns are not announced, and turns you
+   cancelled yourself are silent by default.
+10. **Focus / Do Not Disturb suppresses banners** (they still land in Notification Centre,
+    depending on system settings) — that is macOS behaviour.
+11. **Clicking a notification only activates DSH, not a specific session**: DSH's local port
+    changes on every launch, so deep links are out of scope for now.
 
 ---
 

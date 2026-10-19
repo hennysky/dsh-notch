@@ -5,7 +5,7 @@ import SwiftUI
 
 /// 设置页的分页。设置项变多之后一屏放不下，分页比加高卡片好。
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case alerts, animation, general
+    case alerts, animation, general, notifications
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .alerts: return "提醒"
         case .animation: return "动画"
         case .general: return "通用"
+        case .notifications: return "通知"
         }
     }
 }
@@ -369,6 +370,8 @@ struct BalanceCard: View {
                     animationTab
                 case .general:
                     generalTab
+                case .notifications:
+                    notificationsTab
                 }
             }
             .padding(.top, 12)
@@ -437,6 +440,45 @@ struct BalanceCard: View {
                 .font(.system(size: 9))
                 .foregroundStyle(.white.opacity(0.28))
                 .padding(.top, 10)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// 通知页。说明文字刻意压短：卡片高度是固定的（NotchGeometry.cardHeight），
+    /// 多一个 tab 也不能把内容挤出卡片底部。
+    private var notificationsTab: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("任务完成通知")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.white.opacity(0.48))
+                Spacer(minLength: 0)
+                SettingToggle(isOn: $settings.notifyTaskDone)
+            }
+            Text("DSH 跑完一轮时通知（失败、阻塞、中断也走这里）。")
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.28))
+                .padding(.top, 3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Text("需要处理通知")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.white.opacity(0.48))
+                Spacer(minLength: 0)
+                SettingToggle(isOn: $settings.notifyAttention)
+            }
+            .padding(.top, 10)
+            Text("agent 等你审批或回答时通知。点通知切回 DeepSeek Harness。")
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.28))
+                .padding(.top, 3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("首次使用需在系统弹窗中允许 DSH Notch 发通知。")
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.28))
+                .padding(.top, 8)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

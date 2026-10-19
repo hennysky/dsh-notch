@@ -5,6 +5,8 @@
 [English](README.en.md) · [下载](https://github.com/hennysky/dsh-notch/releases) · [工程笔记](docs/engineering-notes.md)
 
 点一下刘海（或菜单栏）就能看到余额；余额跌破阈值、或单次消耗过大时，它会主动弹出来提醒你。
+装上配套插件后，DSH 任务完成、或停下来等你审批／回答时，它还会发 macOS 系统通知——
+跑长任务时你可以放心去干别的。
 
 | 有刘海的 MacBook | 其它 Mac（Mac mini / iMac / 外接屏） |
 |---|---|
@@ -181,15 +183,57 @@ xattr -dr com.apple.quarantine /Applications/DSHNotch.app
 > 为什么「跌破」只提醒一次？因为后台每 5 分钟查一次，按「处于低位」判定会变成每 5 分钟响一次。
 > 充回阈值之上后会重新武装，下次再跌破才会再提醒。
 
+### DSH 通知（v1.4）
+
+DSH 桌面端本身没有任何系统通知：任务跑完了、或 agent 停下来等你审批，人不在窗口前就
+完全不知道。装上配套插件（[`plugin/`](plugin/)，v1.1.0+）后，这些事件由 DSHNotch 变成
+macOS 通知：
+
+| 什么时候 | 通知 |
+|---|---|
+| DSH 跑完一轮 | 「任务完成」，正文是会话名 + 用时 |
+| 任务失败 / 被阻塞 / 达到长度上限 | 对应的标题，失败时附错误信息 |
+| agent 等你审批 | 「需要你确认」+ 工具名与原因 |
+| agent 提问 | 「需要你回答」+ 问题题干 |
+
+- **点通知直接切回 DeepSeek Harness**（应用没在跑就先打开它）
+- **横幅会消失，红点不会**：有新通知时菜单栏图标右上角出现红点（菜单栏形态是金额后面的
+  `●`），直到你点开卡片（或点开那条通知）才清除——不在屏幕前也不会永久错过
+- 第一次会问一次系统授权，之后可在「系统设置 → 通知 → DSH Notch」里关掉；
+  也可以在卡片设置 → **通知**页单独关掉「任务完成通知」/「需要处理通知」
+- 用户自己按停止的轮次默认不通知（你本来就知道）；子 agent 的轮次不单独通知
+- 通知由 DSHNotch 用自己的身份发出，不经过「脚本编辑器」这类替身
+
+链路：插件在 DSH 侧监听会话事件 → `POST 127.0.0.1:47810/notify` → DSHNotch 用
+`UNUserNotificationCenter` 投递。端口只绑回环；没装插件、或插件没加载时，DSHNotch 的
+其余功能完全不受影响。协议与设计见 [docs/dsh-notifications.md](docs/dsh-notifications.md)。
+
+通知没出来时按顺序排查：
+
+```bash
+curl -s http://127.0.0.1:47810/health
+# {"app":"DSHNotch","authorization":"authorized","ok":true,"version":"1.4"}
+
+grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.log"
+```
+
+| 现象 | 原因 |
+|---|---|
+| curl 连不上 | DSHNotch 没在跑（或端口被另一个实例占用） |
+| `authorization` 不是 `authorized` | 系统通知权限没开 |
+| 日志里没有「已注册 3 个监听」 | 插件还是旧版：重启一次 DSH 加载新代码 |
+| 日志里 `HTTP 200 … shown:false` | 卡片设置里对应的开关被关了 |
+
 ### 设置
 
-卡片右上角的滑杆图标进入设置，分三页：
+卡片右上角的滑杆图标进入设置，分四页：
 
 | 页 | 内容 |
 |---|---|
 | **提醒** | 余额低于、单次消耗、弹出停留时长 |
 | **动画** | 展开/收起动画时长与缓动曲线 |
 | **通用** | 呈现形态、开机自启 |
+| **通知** | 任务完成通知、需要处理通知（DSH 插件发来的系统通知） |
 
 改动即时生效并记住。
 
@@ -207,8 +251,11 @@ xattr -dr com.apple.quarantine /Applications/DSHNotch.app
 
 如果你每天都开着 DeepSeek Harness，可以让刘海工具**跟着 DSH 一起启动**，不用单独双击。
 
-仓库里的 [`plugin/`](plugin/) 是一个 DSH 插件，装进 profile 后：DSH 启动 → 插件激活 →
-确保 `DSHNotch.app` 在跑。
+仓库里的 [`plugin/`](plugin/) 是一个 DSH 插件，装进 profile 后它做两件事：
+
+1. **生命周期**：DSH 启动 → 插件激活 → 确保 `DSHNotch.app` 在跑；
+2. **通知桥**（v1.1.0+）：把 DSH 的任务结束 / 审批 / 提问事件 POST 给 DSHNotch，
+   变成 macOS 系统通知（见上面「DSH 通知」）。
 
 ```bash
 DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
@@ -221,10 +268,11 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 ```bash
 cat "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.log"
 # [..] 已随 DSH 启动：/Applications/DSHNotch.app
+# [..] 通知：已注册 3 个监听（桥端口 47810）
 ```
 
-三种行为：应用没跑就启动；已在运行则不重复启动（避免画出第二个刘海窗口）；
-应用不在预期位置则安静跳过。
+启动行为：应用没跑就启动；已在运行则不重复启动（避免画出第二个刘海窗口）；
+应用不在预期位置则安静跳过。**改了插件代码必须重启 DSH**（Host 插件不像 Web UI 那样热更新）。
 
 ### 为什么插件不把界面直接搬进 DSH
 
@@ -302,7 +350,7 @@ normal_wallets / bonus_wallets / total_costs
 
 ## 自检
 
-项目带 10 项自检，**全部不依赖肉眼**——开发环境没有屏幕录制权限，
+项目带 12 项自检，**全部不依赖肉眼**——开发环境没有屏幕录制权限，
 所以每个结论都要能被命令验证：
 
 ```bash
@@ -318,6 +366,8 @@ $BIN --logincheck      # 开机自启：能否注册登录项（试完自动撤�
 $BIN --setupcheck      # 首次使用引导：凭据缺失/未登录的分类，以及不误判
 $BIN --panelcheck      # 窗口落点 + 层级高于菜单栏
 $BIN --clicktest       # 点击链路 + 命中测试 + 内容像素 + 收起动画中途采样
+$BIN --notifycheck     # 通知桥协议：/health、/notify、去重、截断、错误码
+$BIN --unreadcheck     # 未读红点：计数 / 清零 / 图标里真的画出了红色像素
 ```
 
 排查显示问题时还有几个开关：
@@ -341,6 +391,11 @@ DSH_NOTCH_TEST_ALERT=3 $BIN # 启动 3 秒后模拟一次额度提醒
 6. **只构建 arm64**。
 7. **凭据来源是 DSH 的内部文件**，其格式随 DSH 版本可能变化。解析失败会明确报错，
    不会静默显示错误金额。
+8. **通知依赖 DSH 插件 v1.1.0+**。插件代码在 DSH 启动时加载，升级插件后要重启一次 DSH；
+   DSHNotch 自身升级不需要重启 DSH。
+9. **通知只覆盖根会话**：子 agent 的轮次不单独通知；用户自己按停止的轮次默认不通知。
+10. **免打扰 / 专注模式会压掉横幅**（通知仍进通知中心，视系统设置而定），这是 macOS 行为。
+11. **点击通知只切回 DSH 应用，不跳具体会话**：DSH 的本地端口每次启动都会变，暂不做深链。
 
 ---
 
