@@ -58,7 +58,7 @@ The packages on both platforms are byte-for-byte identical. Either one works.
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.0.2/DSHNotch-1.0.2.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.4/DSHNotch-1.4.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -67,7 +67,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 ```bash
 # Gitee
 curl -fL -o /tmp/DSHNotch.zip \
-  https://gitee.com/hennysky/dsh-notch/releases/download/v1.0.2/DSHNotch-1.0.2.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v1.4/DSHNotch-1.4.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -75,7 +75,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 
 ### Manual install
 
-1. Download `DSHNotch-1.0.2.zip`
+1. Download `DSHNotch-1.4.zip`
 2. Unzip it and drag `DSHNotch.app` into `/Applications`
 3. **The first launch must be right-click → Open** (see below)
 

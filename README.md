@@ -53,7 +53,7 @@ DSHNotch 把余额搬到两个你随时能看到的地方，并在额度异常�
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.0.2/DSHNotch-1.0.2.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.4/DSHNotch-1.4.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -62,7 +62,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 ```bash
 # Gitee
 curl -fL -o /tmp/DSHNotch.zip \
-  https://gitee.com/hennysky/dsh-notch/releases/download/v1.0.2/DSHNotch-1.0.2.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v1.4/DSHNotch-1.4.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -70,7 +70,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 
 ### 手动安装
 
-1. 下载 `DSHNotch-1.0.2.zip`
+1. 下载 `DSHNotch-1.4.zip`
 2. 解压，把 `DSHNotch.app` 拖进「应用程序」
 3. **首次打开必须右键 → 打开**（原因见下）
 
