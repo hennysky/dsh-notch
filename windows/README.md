@@ -13,8 +13,8 @@ DSH 的 Windows 托盘伴侣应用（C# / .NET 8 WinForms）。与 macOS 的 `DS
 
 发布产物是单个自包含 exe，不需要装 .NET：
 
-1. 从 GitHub Actions 下载 `DSHNotch-win-x64.zip`，解压到任意目录，例如
-   `%LOCALAPPDATA%\Programs\DSHNotch\`。
+1. 从 GitHub Actions 下载 `DSHNotch-win-x64.zip`（后续 Release 会带 `DSHNotch-Windows-*.zip`），
+   解压到 `%LOCALAPPDATA%\Programs\DSHNotch\`（插件默认就在这个位置找 `DSHNotch.exe`）。
 2. 双击 `DSHNotch.exe`。首次运行会：
    - 在开始菜单创建 `DSHNotch.lnk`，并写入 `System.AppUserModel.ID = DSHNotch.Desktop`
      （非打包桌面应用发 Windows toast 的前提）；
@@ -148,9 +148,11 @@ curl -s -X POST 127.0.0.1:47810/notify \
 - 投递顺序：设置开关 → 授权状态 → 去重 → toast；toast 失败降级为托盘气泡。
 - 端口占用/桥启动失败只影响通知，不影响余额。
 
-**当前插件版本（1.2.0）在 Windows 上由 DSH 宿主自己发 Electron 通知**，不会 POST 到本桥，
-所以两者同时运行不会重复通知。本托盘应用先把同一套协议实现好，供插件后续改为
-「优先走托盘应用」时直接复用（见 `docs/dsh-notifications.md` 的路线图）。
+**插件 1.3.0+ 在 Windows 上的后端优先级是「托盘应用 → Electron → PowerShell」**：
+插件启动时会探测本桥（`/health` 返回 `app="DSHNotch"`），可达就把通知 POST 过来；
+应用没在运行时会按 `windowsAppPath`（默认 `%LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe`）
+尝试拉起并轮询 1.6 秒；仍不可达才退回 DSH 宿主自己的 Electron 通知。
+所以托盘应用与插件同时安装时**不会重复通知**——插件选中托盘后端后就不再走 Electron。
 
 ### 通知实现细节
 
