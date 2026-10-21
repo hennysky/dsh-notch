@@ -1,0 +1,244 @@
+# DSHNotch for Windows
+
+DSH 的 Windows 托盘伴侣应用（C# / .NET 8 WinForms）。与 macOS 的 `DSHNotch.app`
+功能对等：托盘余额、今日消耗、余额提醒、本地通知桥、未读红点。
+
+> **状态**：功能已实现，CI（`windows-latest`）负责编译、单测与发布产物。
+> 开发机是 macOS、没有 Windows 实机，所以「真实 Windows 上的观感/点击行为」见文末
+> [已知未验证项](#已知未验证项)。请把这一节当作验收边界，不要当成已验证。
+
+---
+
+## 安装
+
+发布产物是单个自包含 exe，不需要装 .NET：
+
+1. 从 GitHub Actions 下载 `DSHNotch-win-x64.zip`，解压到任意目录，例如
+   `%LOCALAPPDATA%\Programs\DSHNotch\`。
+2. 双击 `DSHNotch.exe`。首次运行会：
+   - 在开始菜单创建 `DSHNotch.lnk`，并写入 `System.AppUserModel.ID = DSHNotch.Desktop`
+     （非打包桌面应用发 Windows toast 的前提）；
+   - 在 `HKCU\Software\Classes\dshnotch` 注册 `dshnotch://open-dsh` 协议；
+   - 启动托盘图标，并开始每 300 秒查询一次余额。
+3. 如果系统弹了 Windows 通知权限/专注助手相关的限制，按需在
+   **设置 → 系统 → 通知** 里允许 `DSHNotch`。
+
+从源码构建/测试（需要 .NET 8 SDK，在 Windows 上）：
+
+```powershell
+dotnet build windows/DSHNotch.Windows.sln -c Release
+dotnet test  windows/tests/DSHNotch.Tests/DSHNotch.Tests.csproj -c Release
+dotnet publish windows/src/DSHNotch/DSHNotch.csproj -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+```
+
+CI：`.github/workflows/windows-app.yml`，push/PR 到 `windows-app`、`main` 或手动触发。
+
+---
+
+## 使用
+
+| 操作 | 行为 |
+|---|---|
+| 左键点托盘图标 | 弹出余额卡片（打开卡片即清未读红点） |
+| 右键点托盘图标 | 菜单：显示余额卡片 / 立即刷新 / 开机自启 / 打开 DeepSeek Harness / 打开设置文件 / 打开日志 / 退出 |
+| 托盘 tooltip | `DSHNotch · 余额 ¥X · N 条未读通知`（无未读时省略后半段） |
+| 托盘图标红点 | 收到一条真正投递出去的通知后变红点；打开卡片清零 |
+| 点 toast 通知 | 通过 `dshnotch://open-dsh` 拉起本进程 `--open-dsh`，定位并激活/启动 DSH |
+| 卡片里的两个开关 | 「任务完成通知」「需要处理通知」，改动立即写入 `settings.json` |
+
+余额卡片显示：主钱包余额、赠送余额、今日消耗（本地推算）、累计消费、更新时间；
+查询失败时**保留旧值**，只额外显示一行红色错误小字——绝不把失败合成 `¥0.00`。
+
+### 余额来源
+
+读取 `%USERPROFILE%\.dsh\.credentials.yaml` 中
+`deepseek-account-platform/default` 记录的 `token` 与 `issuer`（行级解析，不引 YAML 依赖），
+然后请求：
+
+```
+GET {issuer}/api/v0/users/get_user_summary
+x-dsh-auth-token: <token>
+```
+
+解析 `normal_wallets` / `bonus_wallets` / `total_costs`。失败不伪造数据：
+HTTP 401 提示重新登录，429 提示稍后重试，其余错误原样展示。
+
+- 后台轮询：300 秒。
+- 点开卡片时补一次刷新，但 30 秒内不重复打接口（防 429）。
+- 今日消耗 = 当前累计消费 − 当日基线，状态存在
+  `%APPDATA%\DSHNotch\daily-cost.json`；跨天且昨天有读数时基线可信，
+  否则只显示 `≥¥X` 或「统计中」。
+
+---
+
+## 设置
+
+`%APPDATA%\DSHNotch\settings.json`（首次保存时自动创建）：
+
+```json
+{
+  "notifyTaskDone": true,
+  "notifyAttention": true,
+  "launchAtLogin": false,
+  "lowBalanceThreshold": 10,
+  "burnThreshold": 2,
+  "dshExecutablePath": null
+}
+```
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `notifyTaskDone` | `true` | `kind=turn-end` 的通知是否投递 |
+| `notifyAttention` | `true` | `kind=attention` 的通知是否投递 |
+| `launchAtLogin` | `false` | 与 `HKCU\...\CurrentVersion\Run` 同步；菜单里勾选即写入 |
+| `lowBalanceThreshold` | `10` | 余额低于该值提醒一次；`0` 关闭。范围 0–50 |
+| `burnThreshold` | `2` | 相邻两次查询消耗超过该值提醒；`0` 关闭。范围 0–20 |
+| `dshExecutablePath` | `null` | 手动指定 DSH 可执行文件；为空时自动找 |
+
+提醒规则（与 macOS 一致）：
+
+- 余额跌破阈值只提醒一次，回到阈值之上后重新武装，下次再跌破才提醒；
+- 单次消耗超过阈值时提醒；两条同时命中时余额告急优先。
+
+### 开机自启
+
+写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 的 `DSHNotch` 值，
+命令为 `"<exe 路径>"`，不需要管理员权限。卸载前记得在菜单里取消勾选。
+
+### DSH 可执行文件定位
+
+1. `settings.json` 的 `dshExecutablePath`（存在才用）；
+2. 常见安装路径（`%LOCALAPPDATA%\Programs\DeepSeek Harness\DeepSeek Harness.exe`、
+   `%ProgramFiles%\DeepSeek Harness\...` 等）；
+3. `PATH` 里的 `DeepSeek Harness.exe`；
+4. 正在运行的 `DeepSeek Harness` 进程路径。
+
+都找不到只写日志、不弹窗；点通知不会因此崩溃。
+
+---
+
+## 本地通知桥（与插件配合）
+
+监听 `127.0.0.1:47810`（TCP 回环，**不用 HttpListener**，避免 URL ACL/管理员权限）。
+协议与 macOS 版完全一致，真源见仓库 `docs/dsh-notifications.md` 第 1 节。
+
+```bash
+curl -s 127.0.0.1:47810/health
+# {"ok":true,"app":"DSHNotch","version":"1.0.0","authorization":"authorized","unread":0}
+
+curl -s -X POST 127.0.0.1:47810/notify \
+  -H 'content-type: application/json' \
+  -d '{"kind":"attention","title":"测试","body":"这是一条测试通知"}'
+# {"ok":true,"shown":true}
+```
+
+| 请求 | 响应 |
+|---|---|
+| `GET /health` | `{ok, app:"DSHNotch", version, authorization:"authorized", unread:N}` |
+| `POST /notify` 合法 | `{ok:true,shown:true}`，未读 +1 |
+| 被设置过滤 | `{ok:true,shown:false,reason:"disabled"}` |
+| dedupeKey 5 秒内重复 | `{ok:true,shown:false,reason:"duplicate"}` |
+| 参数不合法 | `400 {ok:false,error}` |
+| 未知路径 / 方法不对 | `404` / `405` |
+| 端口被占用 | 只写日志，余额功能照常 |
+
+- `title` 超 120 字符、`body` 超 500 字符会截断后照发（不因超长丢通知）。
+- 相同 `dedupeKey` 5 秒内只弹一次。
+- 投递顺序：设置开关 → 授权状态 → 去重 → toast；toast 失败降级为托盘气泡。
+- 端口占用/桥启动失败只影响通知，不影响余额。
+
+**当前插件版本（1.2.0）在 Windows 上由 DSH 宿主自己发 Electron 通知**，不会 POST 到本桥，
+所以两者同时运行不会重复通知。本托盘应用先把同一套协议实现好，供插件后续改为
+「优先走托盘应用」时直接复用（见 `docs/dsh-notifications.md` 的路线图）。
+
+### 通知实现细节
+
+- 非打包桌面应用用 WinRT `Windows.UI.Notifications` 发 toast，必须带 AUMID：
+  首次运行创建开始菜单快捷方式 `DSHNotch.lnk` 并写入 `System.AppUserModel.ID = DSHNotch.Desktop`，
+  同时设置进程 AUMID。
+- toast 用协议激活：`activationType="protocol"`、`launch="dshnotch://open-dsh"`，
+  点击后由系统拉起 `DSHNotch.exe --open-dsh`；该参数在单实例判断之前处理，只负责
+  定位并激活/启动 DSH，然后退出。
+- toast 投递任何异常都降级为 `NotifyIcon.ShowBalloonTip`，绝不把异常抛给桥线程或 UI 线程。
+- 托盘图标与红点用 `System.Drawing` 在运行时绘制（16×16，未读时右上角红点）。
+
+---
+
+## 日志与排查
+
+日志：`%TEMP%\dsh-notch-windows.log`（菜单里有「打开日志」）。
+
+- 后台线程（桥连接、轮询、toast）的异常全部捕获并写日志，不崩托盘进程；
+- UI 线程未处理异常同样只记录，应用继续运行；
+- 记录内容只含状态与标题，不写凭据/token。
+
+| 现象 | 排查 |
+|---|---|
+| 托盘图标不出现 | 看日志是否有致命错误；确认只有一个实例在跑（单实例 Mutex） |
+| 通知不弹 | `curl /health` 看 `authorization`；看日志是否有「toast 投递失败，降级为托盘气泡」 |
+| 余额显示 — | 确认 DSH 已登录（凭据文件存在）；日志里有具体错误 |
+| 点击通知没反应 | 确认 `HKCU\Software\Classes\dshnotch\shell\open\command` 指向当前 exe；日志有「协议唤醒」记录 |
+| 端口 47810 被占用 | 日志「通知桥端口 47810 启动失败」；关掉重复实例即可，余额不受影响 |
+
+---
+
+## 已知未验证项
+
+开发机是 macOS，**没有 Windows 实机**。以下行为只有代码路径 + CI 的编译/单测/集成测试
+覆盖，没有在真实 Windows 桌面上肉眼确认：
+
+- [ ] 真实 toast 的外观、署名（应显示 DSHNotch）、点击后是否真的拉起 DSH；
+- [ ] AUMID + 开始菜单快捷方式在真实用户会话里能否让 toast 稳定显示
+      （CI 只验证了 `.lnk` 能创建、AUMID 属性可回读）；
+- [ ] 托盘图标在真实任务栏/通知区域（含高 DPI、多显示器）的观感与红点可见性；
+- [ ] 余额卡片在 100%/150%/200% 缩放下的排版；
+- [ ] 开机自启在真实重启/重新登录后是否真的拉起（CI 只验证 HKCU Run 读写）；
+- [ ] 真实 DSH 安装路径定位（CI 机器没有 DSH），以及点击通知后 DSH 窗口是否被激活到前台；
+- [ ] 单实例 Mutex 在快速双击/开机启动竞争下的行为；
+- [ ] 与 Microsoft Defender/企业策略、专注助手（Focus Assist）的交互；
+- [ ] 真实平台接口的余额响应（需要用户本机登录凭据；CI 不访问外网接口）。
+
+CI 实际验证的是：两个工程在 `windows-latest` 上编译通过；xUnit 全部通过
+（凭据解析、今日消耗、提醒规则、桥协议随机端口、toast XML 转义、设置读写、未读计数、
+托盘图标红色像素）；AUMID 快捷方式与 HKCU 协议/自启注册表读写；Release 单文件
+self-contained 发布并打包成 artifact。
+
+---
+
+## 目录
+
+```
+windows/
+  DSHNotch.Windows.sln
+  src/DSHNotch/
+    Program.cs                 入口、单实例、--open-dsh、异常兜底
+    TrayApp.cs                 NotifyIcon/菜单/轮询/桥/未读红点
+    BalanceCardForm.cs         余额卡片
+    BalanceModel.cs            余额状态机（失败保留旧快照）
+    BalanceClient.cs           凭据 + HTTP + 响应解析
+    Credentials.cs             .credentials.yaml 行级解析
+    DailyCost.cs               今日消耗推算与落盘
+    AlertDetector.cs           余额/消耗提醒
+    RefreshPolicy.cs           30 秒刷新下限
+    NotificationBridgeRouter.cs 桥协议业务逻辑（纯逻辑，可单测）
+    BridgeServer.cs            TcpListener + 最小 HTTP/1.1 解析
+    ToastNotifier.cs           WinRT toast + 气泡降级
+    ToastXml.cs                toast XML 组装/转义
+    ShortcutCreator.cs         IShellLinkW/IPropertyStore/IPersistFile + AUMID
+    ProtocolRegistration.cs    dshnotch:// 协议
+    StartupRegistration.cs     HKCU Run
+    DshLocator.cs              DSH 定位/激活
+    TrayIconFactory.cs         System.Drawing 画图标与红点
+    Settings.cs                settings.json
+    AppInfo.cs / AppPaths.cs / AppLog.cs / AmountFormat.cs / UnreadStore.cs
+  tests/DSHNotch.Tests/        xUnit（CI 在 windows-latest 跑）
+```
+
+## 卸载
+
+1. 托盘菜单取消「开机自启」；
+2. 退出托盘应用；
+3. 删除 exe 所在目录、`%APPDATA%\DSHNotch\`、`%TEMP%\dsh-notch-windows.log`；
+4. 删除开始菜单快捷方式 `DSHNotch.lnk`；
+5. 删除注册表项 `HKCU\Software\Classes\dshnotch`。
