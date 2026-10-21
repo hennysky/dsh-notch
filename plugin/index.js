@@ -36,7 +36,7 @@
  * 默认 false —— 用户关掉一个插件不该顺手杀掉他正在看的窗口。
  */
 
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { appendFileSync, existsSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -82,13 +82,19 @@ export const DEFAULTS = {
   notifyAttention: true,
   /**
    * Windows 通知后端：
-   * - `auto`（默认）：先试 Electron 原生通知，拿不到再退回 PowerShell toast
+   * - `auto`（默认）：托盘应用（本地桥）→ Electron 原生通知 → PowerShell toast
+   * - `app`：只走托盘应用（DSHNotch.exe）的本地桥
    * - `electron`：只走 Electron 原生通知
-   * - `powershell`：只走 PowerShell toast（无 Electron 的 `dsh web` 场景）
+   * - `powershell`：只走 PowerShell toast（无 Electron / 无托盘应用的场景）
    */
   notifyBackend: 'auto',
   /** PowerShell 可执行文件（Windows 兜底通知用）。 */
   powershellPath: 'powershell.exe',
+  /**
+   * Windows 托盘应用路径（DSHNotch.exe）。留空则自动探测
+   * `%LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe`。
+   */
+  windowsAppPath: '',
 }
 
 /** 根会话的标题/正文模板。未列出的 reason.kind 一律不通知。 */
@@ -734,10 +740,75 @@ export function allowsPayload(settings, payload) {
   return true
 }
 
+/** Windows 托盘应用的默认安装位置（DSHNotch.exe）。没有 LOCALAPPDATA 时返回空串。 */
+export function defaultWindowsAppPath(env = process.env, pathModule = path) {
+  const local = env.LOCALAPPDATA
+  if (typeof local !== 'string' || local === '') return ''
+  return pathModule.join(local, 'Programs', 'DSHNotch', 'DSHNotch.exe')
+}
+
+/** 启动托盘应用：detached，不占住 DSH 的进程。 */
+function defaultSpawn(command, args, options) {
+  const child = spawn(command, args, options)
+  child?.unref?.()
+  return child
+}
+
+const waitMilliseconds = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * 探测/拉起 Windows 托盘应用。
+ *
+ * 优先复用已在运行的托盘应用（本地桥 `/health` 返回 app=DSHNotch）；
+ * 不在运行时尝试拉起 `windowsAppPath`，并在 1.6 秒内轮询桥。
+ * 任何失败都只返回 null，让调用方继续降级。
+ */
+async function connectTrayApp({
+  settings,
+  logger,
+  spawn: spawnApp,
+  wait,
+  bridgeFactory,
+}) {
+  const bridge = bridgeFactory(settings.bridgePort, logger)
+  let health = await bridge.health()
+  if (health?.app === 'DSHNotch') {
+    logger('通知：Windows 后端 = DSHNotch 托盘应用（本地桥）')
+    return { bridge }
+  }
+
+  const appPath = settings.windowsAppPath
+  if (appPath === '') return null
+  if (!existsSync(appPath)) {
+    logger(`通知：Windows 托盘应用不存在（${appPath}），跳过托盘后端`)
+    return null
+  }
+
+  try {
+    spawnApp(appPath, [], { detached: true, stdio: 'ignore' })
+    logger(`通知：已拉起 Windows 托盘应用：${appPath}`)
+  } catch (error) {
+    logger(`通知：启动 Windows 托盘应用失败（${describeError(error)}）`)
+    return null
+  }
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await wait(400)
+    health = await bridge.health()
+    if (health?.app === 'DSHNotch') {
+      logger('通知：Windows 后端 = DSHNotch 托盘应用（启动后可达）')
+      return { bridge }
+    }
+  }
+  logger('通知：Windows 托盘应用已启动，但本地桥仍不可达')
+  return null
+}
+
 /**
  * 创建 Windows 通知发送器。
  *
- * 异步选择后端（Electron 需要动态 import），但对外只暴露 `send` / `health`：
+ * 后端优先级（`auto`）：托盘应用（本地桥，和 macOS 同一协议）→ Electron 原生通知 →
+ * PowerShell toast。异步选择后端，但对外只暴露 `send` / `health`：
  * 选择完成前的通知会排队等它，不会丢。
  */
 export function createWindowsSender({
@@ -745,9 +816,33 @@ export function createWindowsSender({
   log: logger = log,
   importModule = (specifier) => import(specifier),
   execFile: run = execFileAsync,
+  spawn: spawnApp = defaultSpawn,
+  wait = waitMilliseconds,
+  bridgeFactory = (port, logFn) => new NotifyBridge({ port, log: logFn }),
 } = {}) {
   const ready = (async () => {
-    if (settings.notifyBackend !== 'powershell') {
+    const backend = settings.notifyBackend
+
+    if (backend === 'auto' || backend === 'app') {
+      const tray = await connectTrayApp({ settings, logger, spawn: spawnApp, wait, bridgeFactory })
+      if (tray !== null) {
+        return {
+          backend: 'app',
+          async send(payload) {
+            return tray.bridge.send(payload)
+          },
+          async health() {
+            const health = await tray.bridge.health()
+            return { backend: 'app', supported: health?.app === 'DSHNotch', app: health }
+          },
+        }
+      }
+      if (backend === 'app') {
+        logger('通知：托盘后端不可用，退回 PowerShell toast')
+      }
+    }
+
+    if (backend === 'auto' || backend === 'electron') {
       try {
         const imported = await importModule('electron')
         // Electron 以 CommonJS 内置模块暴露；不同 Electron/Node 版本下
@@ -761,10 +856,12 @@ export function createWindowsSender({
           logger('通知：Windows 后端 = Electron 原生通知（署名 DeepSeek Harness）')
           return notifier
         }
+        logger('通知：Electron Notification 不可用，退回 PowerShell toast')
       } catch (error) {
         logger(`通知：在宿主里拿不到 electron（${describeError(error)}），退回 PowerShell toast`)
       }
     }
+
     logger('通知：Windows 后端 = PowerShell toast（署名 Windows PowerShell）')
     return new PowerShellToastNotifier({ execFile: run, log: logger, powershellPath: settings.powershellPath })
   })()
@@ -902,9 +999,14 @@ export function resolveSettings(config, platform = process.platform) {
     bridgePort = DEFAULT_BRIDGE_PORT
   }
 
-  const notifyBackend = ['auto', 'electron', 'powershell'].includes(settings.notifyBackend)
+  const notifyBackend = ['auto', 'app', 'electron', 'powershell'].includes(settings.notifyBackend)
     ? settings.notifyBackend
     : 'auto'
+
+  const windowsAppPath =
+    typeof settings.windowsAppPath === 'string' && settings.windowsAppPath !== ''
+      ? settings.windowsAppPath
+      : defaultWindowsAppPath()
 
   return {
     platform,
@@ -923,6 +1025,7 @@ export function resolveSettings(config, platform = process.platform) {
       typeof settings.powershellPath === 'string' && settings.powershellPath !== ''
         ? settings.powershellPath
         : DEFAULTS.powershellPath,
+    windowsAppPath,
   }
 }
 

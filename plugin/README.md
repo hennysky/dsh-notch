@@ -65,36 +65,35 @@ cat "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.
 pgrep -x DSHNotch
 ```
 
-## Windows：不需要额外应用
+## Windows：三种后端，自动降级
 
 Windows 上 DSH 同样是 Electron 主进程跑 Host，插件和宿主在同一个进程里。所以通知
-**直接由 DeepSeek Harness 自己发**，不需要像 macOS 那样再装一个伴侣应用：
+不需要像 macOS 那样必须有一个伴侣应用，优先级是：
 
 ```
-DSH Host 进程（Electron 主进程）
-  └─ dsh-plugin-notch-balance（本插件）
-        ├─ import('electron') → new Notification(...)  ← 署名 DeepSeek Harness
-        │    └ 点击 → BrowserWindow 恢复/聚焦
-        ├─ 未读 → win.setOverlayIcon(红点)  ← 任务栏图标上的持久红点
-        └─ 拿不到 electron 时退回 PowerShell 5.1 的 WinRT toast
+1. DSHNotch 托盘应用（推荐）
+      本地桥 127.0.0.1:47810 —— 和 macOS 完全同一套 /health、/notify 协议
+      托盘显示余额、任务栏未读红点、toast 署名 DSHNotch
+2. Electron 原生通知（没装托盘应用时）
+      import('electron') → new Notification(...)  ← 署名 DeepSeek Harness
+      点击 → BrowserWindow 恢复/聚焦；未读 → win.setOverlayIcon(任务栏红点)
+3. PowerShell toast（拿不到 Electron 时，例如 dsh web 在 Node 里跑）
+      WinRT toast，署名 Windows PowerShell，点击无行为
 ```
 
-| 行为 | 说明 |
-|---|---|
-| 通知署名 | DeepSeek Harness（Electron 原生通知）；PowerShell 兜底时署名 Windows PowerShell |
-| 点击通知 | 恢复最小化窗口并聚焦 DSH；同时清掉任务栏红点 |
-| 未读红点 | 投递成功且 DSH 不在前台时，在任务栏图标上叠加红点；窗口获得焦点即清除 |
-| 无 Electron 时 | 例如 `dsh web` 在 Node 里跑：用 PowerShell `-EncodedCommand` 发 WinRT toast |
-| macOS | 仍然走 DSHNotch 的本地 HTTP 桥（上面的链路） |
-
-Windows 相关配置（`cordis.patch.yml` 的 `config`）：
+Windows 配置（`cordis.patch.yml` 的 `config`）：
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | `notifyTaskDone` | `true` | Windows 侧是否通知「任务完成 / 失败 / 阻塞 / 中断」 |
 | `notifyAttention` | `true` | Windows 侧是否通知审批与提问 |
-| `notifyBackend` | `auto` | `auto` / `electron` / `powershell` |
+| `notifyBackend` | `auto` | `auto`（托盘 → Electron → PowerShell）/ `app` / `electron` / `powershell` |
+| `windowsAppPath` | 空 | 托盘应用路径；留空自动探测 `%LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe` |
 | `powershellPath` | `powershell.exe` | 兜底通知使用的 PowerShell |
+
+托盘应用从仓库的 [`windows/`](../windows/) 构建（GitHub Actions 的 windows-latest
+产出 `DSHNotch-Windows-*.zip`），解压后放到
+`%LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe` 即可；插件在 `auto` 模式下会自动探测并拉起它。
 
 验证（不需要 Windows 机器也能跑大部分）：
 
@@ -102,8 +101,8 @@ Windows 相关配置（`cordis.patch.yml` 的 `config`）：
 NOTCH_SKIP_PROCESS_TESTS=1 node plugin/test.mjs
 ```
 
-测试里注入了假的 `electron`（Notification / BrowserWindow / setOverlayIcon），
-所以 Windows 分支的逻辑在 macOS 上也能验证；真实的系统通知只能在 Windows 上肉眼确认。
+测试里注入了假的 `electron` 和假的本地桥，所以三种后端的**选择顺序**与
+`send` / 未读 / 点击行为都能在 macOS 上验证；真实 toast 与托盘外观只能在 Windows 上肉眼确认。
 
 ## DSH 通知（任务完成 / 需要你处理）
 

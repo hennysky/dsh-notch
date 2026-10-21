@@ -9,5 +9,7 @@
         notifyAborted: false
         notifyTaskDone: true
         notifyAttention: true
-        # auto = 先试 Electron 原生通知，拿不到再退回 PowerShell toast（仅 Windows 生效）
+        # Windows 后端优先级：auto = 托盘应用 → Electron → PowerShell toast
         notifyBackend: auto
+        # 托盘应用路径；留空自动探测 %LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe
+        windowsAppPath: ''

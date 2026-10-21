@@ -39,6 +39,7 @@ import {
   buildTurnEndNotification,
   createNotificationRuntime,
   createWindowsSender,
+  defaultWindowsAppPath,
   encodePowerShellCommand,
   escapeAppleScript,
   escapeXml,
@@ -697,13 +698,43 @@ const unsupported = makeFakeElectron({ supported: false })
 const unsupportedNotifier = new ElectronNotifier({ electron: unsupported.electron, log: () => {} })
 check('Notification.isSupported()=false 时 health.supported=false', (await unsupportedNotifier.health()).supported === false)
 
-// C5. createWindowsSender：后端选择 + 类型过滤
+// C5. createWindowsSender：后端优先级（托盘应用 → Electron → PowerShell）+ 类型过滤
+function makeFakeAppBridge({ health = null } = {}) {
+  const sent = []
+  return {
+    sent,
+    async health() {
+      return health
+    },
+    async send(payload) {
+      sent.push(payload)
+      return true
+    },
+  }
+}
+
+const appBridge = makeFakeAppBridge({ health: { ok: true, app: 'DSHNotch', version: '1.0.0' } })
+const appSender = createWindowsSender({
+  settings: resolveSettings({ notifyBackend: 'auto' }, 'win32'),
+  log: () => {},
+  bridgeFactory: () => appBridge,
+  importModule: async () => fake.electron,
+})
+check('auto：托盘应用可达时优先 app 后端', (await appSender.health())?.backend === 'app')
+check(
+  'app 后端：通知走本地桥',
+  (await appSender.send({ kind: 'attention', title: 'a', body: 'b' })) === true &&
+    appBridge.sent.length === 1,
+  `bridge 收到 ${appBridge.sent.length} 条`,
+)
+
 const electronSender = createWindowsSender({
   settings: resolveSettings({ notifyBackend: 'auto' }, 'win32'),
   log: () => {},
   importModule: async () => fake.electron,
+  bridgeFactory: () => makeFakeAppBridge({ health: null }),
 })
-check('auto：有 electron 时选 Electron 后端', (await electronSender.health())?.backend === 'electron')
+check('auto：托盘不可达 → Electron 后端', (await electronSender.health())?.backend === 'electron')
 
 const winSettings = resolveSettings({ notifyBackend: 'auto', notifyTaskDone: false }, 'win32')
 const filteredSender = createWindowsSender({
@@ -713,8 +744,9 @@ const filteredSender = createWindowsSender({
     throw new Error('no electron in headless dsh')
   },
   execFile: async () => {},
+  bridgeFactory: () => makeFakeAppBridge({ health: null }),
 })
-check('拿不到 electron → 退回 PowerShell', (await filteredSender.health())?.backend === 'powershell')
+check('托盘与 electron 都不可用 → PowerShell', (await filteredSender.health())?.backend === 'powershell')
 check(
   'notifyTaskDone:false 时 Windows 侧过滤 turn-end',
   (await filteredSender.send({ kind: 'turn-end', title: 'x', body: 'y' })) === false,
@@ -727,6 +759,35 @@ check(
   'allowsPayload 放行未配置的类型',
   allowsPayload(winSettings, { kind: 'attention' }) === true &&
     allowsPayload(winSettings, { kind: 'turn-end' }) === false,
+)
+
+// 托盘应用不在运行：会尝试拉起一次，超时后继续降级
+const spawnCalls = []
+const launchSender = createWindowsSender({
+  settings: resolveSettings({ notifyBackend: 'app', windowsAppPath: process.execPath }, 'win32'),
+  log: () => {},
+  importModule: async () => fake.electron,
+  execFile: async () => {},
+  bridgeFactory: () => makeFakeAppBridge({ health: null }),
+  spawn: (command, args, options) => {
+    spawnCalls.push({ command, options })
+    return { unref() {} }
+  },
+  wait: async () => {},
+})
+check('app 后端不可达 → 降级 PowerShell', (await launchSender.health())?.backend === 'powershell')
+check(
+  'app 后端会尝试拉起托盘应用（detached）',
+  spawnCalls.length === 1 && spawnCalls[0]?.command === process.execPath &&
+    spawnCalls[0]?.options?.detached === true,
+  JSON.stringify(spawnCalls),
+)
+
+check(
+  'defaultWindowsAppPath 使用 LOCALAPPDATA',
+  defaultWindowsAppPath({ LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' }, path.win32) ===
+    'C:\\Users\\x\\AppData\\Local\\Programs\\DSHNotch\\DSHNotch.exe',
+  defaultWindowsAppPath({ LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' }, path.win32),
 )
 
 // C6. 平台解析与 win32 的 apply 不碰 macOS 应用

@@ -92,25 +92,24 @@ DSHNotch.app（本仓库 Sources/）
 - 点开卡片、点开菜单栏图标、或点开系统通知 → `UnreadStore.clear()`；
 - 计数只存在内存里：应用重启后归零（通知已经弹过，系统通知中心里还有历史）。
 
-### Windows（插件 1.2.0+）
+### Windows（插件 1.2.0+，托盘应用 1.3.0+）
 
-Windows 上不需要 DSHNotch：DSH 同样是 Electron 主进程跑 Host，插件与宿主同进程，
-因此通知直接从宿主发出：
+Windows 上 DSH 同样是 Electron 主进程跑 Host，插件与宿主同进程。通知后端按优先级降级：
 
-| 能力 | Windows 实现 |
-|---|---|
-| 通知 | `import('electron')` → `new Notification({title, body})`；署名 DeepSeek Harness |
-| 点击 | `notification.on('click')` → 恢复最小化 / 显示 / 聚焦 `BrowserWindow` |
-| 未读 | `win.setOverlayIcon(红点)` 叠在任务栏图标上；窗口获得焦点或点通知时清除 |
-| 无 Electron 时 | PowerShell 5.1 + WinRT toast（`-EncodedCommand` 传 base64 脚本，零依赖） |
-| 后端选择 | `notifyBackend: auto / electron / powershell`；`auto` 先试 Electron |
-| 平台过滤 | `notifyTaskDone` / `notifyAttention`（macOS 由 DSHNotch 设置页过滤） |
+| 优先级 | 后端 | 实现 | 署名 / 点击 |
+|---|---|---|---|
+| 1 | **DSHNotch 托盘应用**（推荐） | 本地桥 `127.0.0.1:47810`，与 macOS **完全同一套** `/health`、`/notify` 协议 | 署名 DSHNotch；点 toast 回 DSH；托盘未读红点 |
+| 2 | Electron 原生通知 | `import('electron')` → `new Notification(...)`；未读用 `win.setOverlayIcon` | 署名 DeepSeek Harness；点通知聚焦窗口 |
+| 3 | PowerShell toast | WinRT + `-EncodedCommand`，零依赖 | 署名 Windows PowerShell；点击无行为 |
 
-Windows 分支的逻辑用注入的假 `electron` 覆盖，可以在 macOS / Linux 上跑单测；
-真实系统通知仍需 Windows 机器肉眼确认（CI 在 `windows-latest` 上跑同一套单测）。
+- `notifyBackend: auto / app / electron / powershell`；`auto` 按上表顺序尝试
+- 托盘应用路径：`windowsAppPath`，留空自动探测 `%LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe`；
+  不在运行时会尝试拉起，并在 1.6 秒内轮询桥
+- 平台过滤：`notifyTaskDone` / `notifyAttention`（macOS 由 DSHNotch 设置页过滤）
+- 托盘应用源码在 `windows/`（C# .NET 8 WinForms），CI 用 `windows-latest` 构建并发布 zip
 
-> 路线图：下一步是独立的 Windows 托盘伴侣（C# WinForms，托盘显示余额 + 未读 + 右键菜单），
-> 通过同一个 `127.0.0.1:47810` 协议与插件通信；届时插件优先走托盘应用，其次才是 Electron。
+三种后端的**选择顺序**、`send`、未读与点击行为都用注入的假 electron / 假桥做了单测，
+可在 macOS / Linux CI 上跑；真实 toast、托盘图标、AUMID 注册、开机自启仍需 Windows 机器确认。
 
 ---
 

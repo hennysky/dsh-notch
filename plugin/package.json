@@ -1,8 +1,8 @@
 {
   "name": "dsh-plugin-notch-balance",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
-  "description": "Launches the DSHNotch widget on macOS and bridges DSH session events to native notifications on macOS and Windows (Electron toast + taskbar unread badge; PowerShell fallback).",
+  "description": "Launches DSHNotch on macOS and bridges DSH session events to native notifications on macOS and Windows (Windows tray app → Electron toast + taskbar unread badge → PowerShell fallback).",
   "type": "module",
   "exports": {
     ".": "./index.js",

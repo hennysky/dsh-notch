@@ -284,10 +284,10 @@ instead of launching it by hand.
 2. **Notification bridge** (v1.1.0+): it POSTs DSH's turn-finished / approval / question events
    to DSHNotch, which turns them into macOS notifications (see "DSH notifications" above).
 
-> **On Windows you do not need DSHNotch**: the same plugin (v1.2.0+) calls DeepSeek Harness's
-> own Electron notifications directly and shows an unread badge on the taskbar icon; without
-> Electron it falls back to a PowerShell toast. So on Windows the plugin alone is enough —
-> see [plugin/README.md](plugin/README.md).
+> **Windows has its own tray companion**: unzip `DSHNotch-Windows-*.zip` into
+> `%LOCALAPPDATA%\Programs\DSHNotch\`; the plugin (v1.3.0+) detects and launches it. Without
+> the tray app it falls back to DeepSeek Harness's own Electron notifications, then to a
+> PowerShell toast. Source lives in [`windows/`](windows/); see [plugin/README.md](plugin/README.md).
 
 ```bash
 DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
