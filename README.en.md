@@ -1,20 +1,26 @@
 # DSHNotch
 
-**Keep an eye on your DeepSeek Harness balance, right on your Mac.**
+**A native macOS companion for DeepSeek Harness: balance in the notch, notifications when a task finishes or needs you.**
 
 [中文](README.md) · [Download](https://github.com/hennysky/dsh-notch/releases) · [Engineering notes](docs/engineering-notes.md)
+· [Notification protocol](docs/dsh-notifications.md)
 
-Click the notch (or the menu bar item) to see your balance. When it drops below a threshold,
-or when a single top-up burn is unusually large, DSHNotch pops up to tell you.
+![release](https://img.shields.io/github/v/release/hennysky/dsh-notch)
+![license](https://img.shields.io/github/license/hennysky/dsh-notch)
+![platform](https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20arm64-blue)
 
-With the companion plugin installed, it also posts macOS notifications when a DSH task
-finishes, or when the agent stops and waits for your approval or answer — so you can walk
-away during a long task.
+| Balance in the notch | Works without a notch too | Notifications are switchable |
+|---|---|---|
+| ![Notch mode](preview/balance.png) | ![Menu bar mode](preview/menubar.png) | ![Notification settings](preview/settings-notifications.png) |
+| Click the notch to expand | Falls back to the menu bar automatically | Task finished / needs attention, two switches |
 
-| MacBook with a notch | Any other Mac (Mac mini / iMac / external display) |
-|---|---|
-| ![Notch mode](preview/balance.png) | ![Menu bar mode](preview/menubar.png) |
-| Click the notch to expand the card | Balance shown right in the menu bar; click to open the card |
+Three things:
+
+- **Balance**: click the notch (or the menu-bar item) to see the DeepSeek Harness balance; it alerts when the balance drops below a threshold or a single burn is unusually large.
+- **DSH notifications**: macOS notifications when a task finishes, fails, or the agent stops for your approval or answer. Click to switch back to DSH; the banner disappears, but the **red dot on the menu bar does not** — until you open the card.
+- **Starts with DSH**: one companion plugin launches it with DSH and bridges session events into notifications.
+
+> Status: v1.4 · MIT · macOS 14+ · Apple Silicon — 12 human-free self-checks, plugin tests and real notification delivery all verified.
 
 ---
 
@@ -22,11 +28,15 @@ away during a long task.
 
 Your DSH balance is only visible inside the DSH app. While a long task is running,
 you have no idea how much has been spent until you go look — and by then it is often nearly gone.
+Long tasks have a second problem: when one finishes, or the agent stops for your approval,
+you have no way to know unless you are looking at the window — DSH desktop has no system
+notifications at all.
 
-DSHNotch puts the balance somewhere you already look, and speaks up when something is wrong.
+DSHNotch fixes both: the balance moves to the notch / menu bar, and it speaks up when the balance
+is unusual, a task finishes, or the agent needs you.
 
-The scope is deliberately narrow: **read-only balance. No top-up flow, no billing history,
-no access to your account beyond what DSH already stores.**
+The scope is deliberately narrow: **read-only balance and forwarding of DSH events. No message
+sending, no top-up flow, no access to your account beyond what DSH already stores.**
 
 ---
 

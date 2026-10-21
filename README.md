@@ -1,28 +1,40 @@
 # DSHNotch
 
-**在 Mac 上随时看到 DeepSeek Harness 的余额。**
+**DeepSeek Harness 的 macOS 原生伴侣：刘海看余额，任务完成 / 等你处理时发系统通知。**
 
 [English](README.en.md) · [下载](https://github.com/hennysky/dsh-notch/releases) · [工程笔记](docs/engineering-notes.md)
+· [DSH 通知协议](docs/dsh-notifications.md)
 
-点一下刘海（或菜单栏）就能看到余额；余额跌破阈值、或单次消耗过大时，它会主动弹出来提醒你。
-装上配套插件后，DSH 任务完成、或停下来等你审批／回答时，它还会发 macOS 系统通知——
-跑长任务时你可以放心去干别的。
+![release](https://img.shields.io/github/v/release/hennysky/dsh-notch)
+![license](https://img.shields.io/github/license/hennysky/dsh-notch)
+![platform](https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20arm64-blue)
 
-| 有刘海的 MacBook | 其它 Mac（Mac mini / iMac / 外接屏） |
-|---|---|
-| ![刘海形态](preview/balance.png) | ![菜单栏形态](preview/menubar.png) |
-| 点刘海展开卡片 | 菜单栏直接显示金额，点开是卡片 |
+| 余额就在刘海里 | 没有刘海的 Mac 也能用 | 通知可以分别关 |
+|---|---|---|
+| ![刘海形态](preview/balance.png) | ![菜单栏形态](preview/menubar.png) | ![通知设置](preview/settings-notifications.png) |
+| 点刘海展开卡片 | 自动用菜单栏形态 | 任务完成 / 需要处理，两个开关 |
+
+三件事：
+
+- **余额**：点刘海（或菜单栏）就能看到 DeepSeek Harness 余额；跌破阈值、单次消耗过大时主动提醒。
+- **DSH 通知**：任务完成、失败、或 agent 停下来等你审批／回答时发 macOS 系统通知。点通知切回 DSH；
+  横幅会消失，但菜单栏图标上的**红点不会**——直到你点开卡片。
+- **跟着 DSH 启动**：装一个配套插件，DSH 启动时自动拉起，并负责把会话事件转成通知。
+
+> 状态：v1.4 · MIT · macOS 14+ · Apple Silicon ｜ 12 项零人工自检、插件测试与真实通知投递均已实测
 
 ---
 
 ## 这个项目解决什么问题
 
 DSH 的余额只在应用界面里看得到。挂着长任务的时候，你不点开就不知道额度掉了多少，
-往往等发现时已经快用完了。
+往往等发现时已经快用完了。长任务还有另一个问题：任务跑完了、或 agent 停下来等你审批，
+人不在窗口前就完全不知道——DSH 桌面端没有任何系统通知。
 
-DSHNotch 把余额搬到两个你随时能看到的地方，并在额度异常时主动提醒。
+DSHNotch 解决这两件事：把余额搬到刘海／菜单栏，并在额度异常、任务完成、需要你处理时
+主动提醒。
 
-功能刻意做得很窄：**只读余额。不做充值流程、不做历史账单、不碰你的账号。**
+功能边界刻意守住：**只读余额、只转发 DSH 的事件。不代发消息、不碰你的账号、不做充值流程。**
 
 ---
 
