@@ -8,6 +8,7 @@
 ![release](https://img.shields.io/github/v/release/hennysky/dsh-notch)
 ![license](https://img.shields.io/github/license/hennysky/dsh-notch)
 ![platform](https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20arm64-blue)
+![plugin tests](https://github.com/hennysky/dsh-notch/actions/workflows/plugin-tests.yml/badge.svg)
 
 | 余额就在刘海里 | 没有刘海的 Mac 也能用 | 通知可以分别关 |
 |---|---|---|
