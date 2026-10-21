@@ -55,13 +55,20 @@ public static class ShortcutCreator
 
             var propertyStore = (IPropertyStore)shellLinkObject;
             var key = PKeyAppUserModelId;
-            InitPropVariantFromString(aumid, out var variant);
+            // 不用 InitPropVariantFromString：不是所有 Windows 版本的 propsys.dll 都导出它，
+            // CI 上实测 EntryPointNotFoundException。手工构造 VT_LPWSTR 即可。
+            var variant = new PropVariant
+            {
+                Vt = VariantTypeLpwstr,
+                PointerValue = Marshal.StringToCoTaskMemUni(aumid),
+            };
             try
             {
                 propertyStore.SetValue(ref key, ref variant);
             }
             finally
             {
+                // VT_LPWSTR 的字符串由 PropVariantClear 用 CoTaskMemFree 释放。
                 PropVariantClear(ref variant);
             }
 
@@ -233,9 +240,6 @@ public static class ShortcutCreator
         [FieldOffset(8)]
         public IntPtr PointerValue;
     }
-
-    [DllImport("propsys.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    private static extern int InitPropVariantFromString(string psz, out PropVariant ppropvar);
 
     [DllImport("ole32.dll", ExactSpelling = true)]
     private static extern int PropVariantClear(ref PropVariant pvar);
