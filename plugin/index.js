@@ -990,8 +990,14 @@ function registerNotificationListeners(ctx, settings, sender) {
   void sender.health?.()
 }
 
-export function apply(ctx, config = {}) {
-  const settings = resolveSettings(config)
+/**
+ * @param ctx - 宿主上下文。
+ * @param config - `cordis.patch.yml` 里的 config。
+ * @param runtime - 测试注入点：`{ platform }` 可覆盖 `process.platform`，
+ *   让同一套测试在 Linux/Windows CI 上也能走 darwin / win32 分支。
+ */
+export function apply(ctx, config = {}, runtime = {}) {
+  const settings = resolveSettings(config, runtime.platform ?? process.platform)
 
   // macOS：确保 DSHNotch.app 在跑（Windows 不需要伴侣应用，通知直接由宿主进程发）
   if (settings.platform === 'darwin') {

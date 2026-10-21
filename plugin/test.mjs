@@ -353,7 +353,7 @@ check('桥不可达：写入了失败日志', fallbackLogs.some((line) => line.i
 
 const bridge = await startMockBridge()
 const harness = makeCtx()
-apply(harness.ctx, { appPath: NOT_AN_APP, bridgePort: bridge.port, notifyAborted: false })
+apply(harness.ctx, { appPath: NOT_AN_APP, bridgePort: bridge.port, notifyAborted: false }, { platform: 'darwin' })
 
 check(
   'notify:true：注册了 3 个监听',
@@ -527,7 +527,7 @@ await bridge.close()
 
 const offBridge = await startMockBridge()
 const offHarness = makeCtx()
-apply(offHarness.ctx, { appPath: NOT_AN_APP, notify: false, bridgePort: offBridge.port })
+apply(offHarness.ctx, { appPath: NOT_AN_APP, notify: false, bridgePort: offBridge.port }, { platform: 'darwin' })
 check('notify:false：ctx.on 一次都没被调用', offHarness.onCalls() === 0, `ctx.on 调用 ${offHarness.onCalls()} 次`)
 check('notify:false：不注册任何 effect', offHarness.effectCleanups.length === 0, `effect ${offHarness.effectCleanups.length} 个`)
 await sleep(150)
@@ -732,7 +732,7 @@ check(
 // C6. 平台解析与 win32 的 apply 不碰 macOS 应用
 check('resolveSettings 记录平台', resolveSettings({}, 'win32').platform === 'win32')
 const winCtx = makeCtx()
-apply(winCtx.ctx, { notify: false })
+apply(winCtx.ctx, { notify: false }, { platform: 'win32' })
 check('win32 + notify:false 不注册任何监听', winCtx.onCalls() === 0, `ctx.on 调用 ${winCtx.onCalls()} 次`)
 
 // ─────────────────────────────────────────────────────────────
@@ -787,13 +787,13 @@ if (SKIP_PROCESS) {
   rmSync(LOG, { force: true })
   check('前置：/Applications/DSHNotch.app 存在', existsSync(APP), APP)
 
-  apply(ctx, { appPath: APP, notify: false })
+  apply(ctx, { appPath: APP, notify: false }, { platform: 'darwin' })
   await sleep(2500)
   check('未运行 → 启动', lastLog().includes('已随 DSH 启动'), lastLog())
   const afterLaunch = pgrep(['-x', 'DSHNotch'])
   check('进程真的起来了', afterLaunch.length === 1, `pid ${afterLaunch.join(',')}`)
 
-  apply(ctx, { appPath: APP, notify: false })
+  apply(ctx, { appPath: APP, notify: false }, { platform: 'darwin' })
   await sleep(1500)
   check('已在运行 → 不重复启动', lastLog().includes('已在运行'), lastLog())
   check(
@@ -802,7 +802,7 @@ if (SKIP_PROCESS) {
     `实例数 ${pgrep(['-x', 'DSHNotch']).length}`,
   )
 
-  apply(ctx, { appPath: '/Applications/DefinitelyNotHere.app', notify: false })
+  apply(ctx, { appPath: '/Applications/DefinitelyNotHere.app', notify: false }, { platform: 'darwin' })
   await sleep(800)
   check('路径不存在 → 安静跳过', lastLog().includes('跳过'), lastLog())
 }
