@@ -28,6 +28,13 @@ public static class ShortcutCreator
             }
 
             CreateShortcut(DefaultShortcutPath, exe, AppInfo.Aumid);
+            var readBack = ReadAumid(DefaultShortcutPath);
+            if (readBack != AppInfo.Aumid)
+            {
+                AppLog.Write($"⚠️ 快捷方式 AUMID 回读不一致（期望 {AppInfo.Aumid}，实际 {readBack ?? "<null>"}）——toast 可能不可用，降级为托盘气泡");
+                return false;
+            }
+
             return true;
         }
         catch (Exception ex)
@@ -92,6 +99,8 @@ public static class ShortcutCreator
         try
         {
             shellLinkObject = new ShellLinkCoClass();
+            // 必须先 Load 才能读到已保存文件里的属性；新建的空快捷方式里没有 AUMID。
+            ((IPersistFile)shellLinkObject).Load(linkPath, 0 /* STGM_READ */);
             var propertyStore = (IPropertyStore)shellLinkObject;
             var key = PKeyAppUserModelId;
             propertyStore.GetValue(ref key, out var variant);
@@ -228,10 +237,11 @@ public static class ShortcutCreator
     }
 
     /// <summary>
-    /// PROPVARIANT 的 x64 布局：vt 在偏移 0，联合体在偏移 8。
-    /// 本项目只发布 win-x64，所以这样足够；x86 需要改为 Pack=4 的 16 字节布局。
+    /// PROPVARIANT 的 x64 布局：vt 在偏移 0，联合体在偏移 8，总大小 24 字节。
+    /// 必须显式 Size=24：COM 按 24 字节读写，managed 结构小的话会被越界写。
+    /// 本项目只发布 win-x64；x86 需要 16 字节布局。
     /// </summary>
-    [StructLayout(LayoutKind.Explicit)]
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
     private struct PropVariant
     {
         [FieldOffset(0)]
