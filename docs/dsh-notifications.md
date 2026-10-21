@@ -92,6 +92,26 @@ DSHNotch.app（本仓库 Sources/）
 - 点开卡片、点开菜单栏图标、或点开系统通知 → `UnreadStore.clear()`；
 - 计数只存在内存里：应用重启后归零（通知已经弹过，系统通知中心里还有历史）。
 
+### Windows（插件 1.2.0+）
+
+Windows 上不需要 DSHNotch：DSH 同样是 Electron 主进程跑 Host，插件与宿主同进程，
+因此通知直接从宿主发出：
+
+| 能力 | Windows 实现 |
+|---|---|
+| 通知 | `import('electron')` → `new Notification({title, body})`；署名 DeepSeek Harness |
+| 点击 | `notification.on('click')` → 恢复最小化 / 显示 / 聚焦 `BrowserWindow` |
+| 未读 | `win.setOverlayIcon(红点)` 叠在任务栏图标上；窗口获得焦点或点通知时清除 |
+| 无 Electron 时 | PowerShell 5.1 + WinRT toast（`-EncodedCommand` 传 base64 脚本，零依赖） |
+| 后端选择 | `notifyBackend: auto / electron / powershell`；`auto` 先试 Electron |
+| 平台过滤 | `notifyTaskDone` / `notifyAttention`（macOS 由 DSHNotch 设置页过滤） |
+
+Windows 分支的逻辑用注入的假 `electron` 覆盖，可以在 macOS / Linux 上跑单测；
+真实系统通知仍需 Windows 机器肉眼确认（CI 在 `windows-latest` 上跑同一套单测）。
+
+> 路线图：下一步是独立的 Windows 托盘伴侣（C# WinForms，托盘显示余额 + 未读 + 右键菜单），
+> 通过同一个 `127.0.0.1:47810` 协议与插件通信；届时插件优先走托盘应用，其次才是 Electron。
+
 ---
 
 ## 2. 插件侧（dsh-plugin-notch-balance）

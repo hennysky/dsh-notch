@@ -25,13 +25,23 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
   DEFAULTS,
+  ElectronNotifier,
   NotifyBridge,
+  PowerShellToastNotifier,
+  UNREAD_BADGE_PNG,
+  allowsPayload,
   apply,
   buildApprovalNotification,
+  buildPowerShellArgs,
+  buildPowerShellToastScript,
   buildQuestionNotification,
+  buildToastXml,
   buildTurnEndNotification,
   createNotificationRuntime,
+  createWindowsSender,
+  encodePowerShellCommand,
   escapeAppleScript,
+  escapeXml,
   formatDuration,
   isRootSession,
   resolveSettings,
@@ -529,6 +539,201 @@ check(
   'resolveSettings：非法 bridgePort 回落到 47810',
   resolveSettings({ bridgePort: 'not-a-port' }).bridgePort === 47810,
 )
+
+// ─────────────────────────────────────────────────────────────
+// C. Windows 后端（纯逻辑，不依赖 Windows，可在 CI 的 windows-latest 上跑）
+// ─────────────────────────────────────────────────────────────
+
+console.log('\n── C. Windows 通知后端 ──')
+
+// C1. XML 转义 + toast 模板
+const escaped = escapeXml(`a&b<c>d"e'f`)
+check('escapeXml 转义 & < > " \'', escaped === 'a&amp;b&lt;c&gt;d&quot;e&apos;f', escaped)
+const toastXml = buildToastXml({ title: '任务 <完成>', body: 'a & b "c"' })
+check('buildToastXml 使用 ToastGeneric 模板', toastXml.includes('template="ToastGeneric"'), toastXml)
+check(
+  'buildToastXml 对标题/正文做了 XML 转义',
+  toastXml.includes('任务 &lt;完成&gt;') && toastXml.includes('a &amp; b &quot;c&quot;'),
+  toastXml,
+)
+check('Windows 红点资源是内嵌 PNG data URL', UNREAD_BADGE_PNG.startsWith('data:image/png;base64,'), UNREAD_BADGE_PNG.slice(0, 32) + '…')
+
+// C2. PowerShell 兜底：脚本 + EncodedCommand
+const psScript = buildPowerShellToastScript({ title: '任务完成', body: '用时 2 分 13 秒' })
+check(
+  'PowerShell 脚本包含 WinRT toast 调用',
+  psScript.includes('ToastNotificationManager') && psScript.includes('CreateToastNotifier'),
+)
+const decodedScript = Buffer.from(encodePowerShellCommand(psScript), 'base64').toString('utf16le')
+check('EncodedCommand 是 UTF-16LE base64 且可还原', decodedScript === psScript, `${decodedScript.slice(0, 36)}…`)
+const psArgs = buildPowerShellArgs(psScript)
+check(
+  'PowerShell 参数包含 -NoProfile / -EncodedCommand',
+  psArgs.includes('-NoProfile') && psArgs.includes('-EncodedCommand'),
+  psArgs.join(' '),
+)
+
+// C3. PowerShellToastNotifier
+const psCalls = []
+const psNotifier = new PowerShellToastNotifier({
+  execFile: async (file, args, options) => {
+    psCalls.push({ file, args, options })
+  },
+  log: () => {},
+})
+const psSent = await psNotifier.send({ kind: 'turn-end', title: '任务完成', body: 'ok' })
+check(
+  'PowerShellToastNotifier 用 powershell.exe 且 windowsHide',
+  psSent === true && psCalls[0]?.file === 'powershell.exe' && psCalls[0]?.options?.windowsHide === true,
+  JSON.stringify(psCalls[0]?.options),
+)
+const psFailNotifier = new PowerShellToastNotifier({
+  execFile: async () => {
+    throw new Error('boom')
+  },
+  log: () => {},
+})
+check('PowerShell toast 失败不抛异常', (await psFailNotifier.send({ title: 'x', body: 'y' })) === false)
+
+// C4. ElectronNotifier（注入假 electron，验证行为而不是 API）
+function makeFakeElectron({ supported = true } = {}) {
+  const shown = []
+  const overlays = []
+  const focusCalls = []
+  const appHandlers = {}
+
+  const fakeWindow = {
+    focused: false,
+    overlay: undefined,
+    on() {},
+    isMinimized: () => false,
+    restore: () => {},
+    show: () => {},
+    focus: () => {
+      fakeWindow.focused = true
+      focusCalls.push('focus')
+    },
+    setOverlayIcon(image, description) {
+      fakeWindow.overlay = { image, description }
+      overlays.push({ image, description })
+    },
+  }
+
+  class FakeNotification {
+    static isSupported() {
+      return supported
+    }
+
+    constructor(options) {
+      this.options = options
+      this.handlers = {}
+      this.visible = false
+      shown.push(this)
+    }
+
+    on(event, handler) {
+      this.handlers[event] = handler
+    }
+
+    show() {
+      this.visible = true
+    }
+  }
+
+  return {
+    electron: {
+      Notification: FakeNotification,
+      nativeImage: { createFromDataURL: (url) => ({ url }) },
+      BrowserWindow: {
+        getAllWindows: () => [fakeWindow],
+        getFocusedWindow: () => (fakeWindow.focused ? fakeWindow : null),
+      },
+      app: { on: (event, handler) => { appHandlers[event] = handler } },
+    },
+    shown,
+    overlays,
+    focusCalls,
+    appHandlers,
+    fakeWindow,
+  }
+}
+
+const overlayCleared = (fake) =>
+  fake.fakeWindow.overlay?.image === null && (fake.fakeWindow.overlay?.description ?? '') === ''
+
+const fake = makeFakeElectron()
+const electronNotifier = new ElectronNotifier({ electron: fake.electron, log: () => {} })
+check('ElectronNotifier.health 报告 supported', (await electronNotifier.health()).supported === true)
+electronNotifier.bind()
+check('ElectronNotifier 绑定已有窗口', electronNotifier.windows.size === 1, `windows=${electronNotifier.windows.size}`)
+
+await electronNotifier.send({ kind: 'turn-end', title: '任务完成', body: 'ok' })
+check('Electron 通知被 show()', fake.shown.length === 1 && fake.shown[0].visible === true)
+check(
+  '未聚焦时任务栏红点 +1',
+  electronNotifier.unread === 1 && fake.fakeWindow.overlay?.description === '1 条未读通知',
+  JSON.stringify(fake.fakeWindow.overlay?.description),
+)
+await electronNotifier.send({ kind: 'attention', title: '需要你确认', body: 'bash 请求授权' })
+check(
+  '第二条 → 未读 2',
+  electronNotifier.unread === 2 && fake.fakeWindow.overlay?.description === '2 条未读通知',
+  JSON.stringify(fake.fakeWindow.overlay?.description),
+)
+fake.shown[0]?.handlers?.click?.()
+check('点击通知 → 聚焦 DSH 并清未读', fake.focusCalls.length === 1 && electronNotifier.unread === 0 && overlayCleared(fake))
+
+fake.fakeWindow.focused = true
+await electronNotifier.send({ kind: 'turn-end', title: '任务完成', body: 'focused' })
+check('DSH 已聚焦时不留红点', electronNotifier.unread === 0 && overlayCleared(fake), `unread=${electronNotifier.unread}`)
+
+fake.fakeWindow.focused = false
+await electronNotifier.send({ kind: 'attention', title: '需要你回答', body: 'again' })
+check('再次未聚焦 → 未读 1', electronNotifier.unread === 1, `unread=${electronNotifier.unread}`)
+fake.appHandlers['browser-window-focus']?.()
+check('窗口获得焦点 → 未读清零', electronNotifier.unread === 0 && overlayCleared(fake), `unread=${electronNotifier.unread}`)
+
+const unsupported = makeFakeElectron({ supported: false })
+const unsupportedNotifier = new ElectronNotifier({ electron: unsupported.electron, log: () => {} })
+check('Notification.isSupported()=false 时 health.supported=false', (await unsupportedNotifier.health()).supported === false)
+
+// C5. createWindowsSender：后端选择 + 类型过滤
+const electronSender = createWindowsSender({
+  settings: resolveSettings({ notifyBackend: 'auto' }, 'win32'),
+  log: () => {},
+  importModule: async () => fake.electron,
+})
+check('auto：有 electron 时选 Electron 后端', (await electronSender.health())?.backend === 'electron')
+
+const winSettings = resolveSettings({ notifyBackend: 'auto', notifyTaskDone: false }, 'win32')
+const filteredSender = createWindowsSender({
+  settings: winSettings,
+  log: () => {},
+  importModule: async () => {
+    throw new Error('no electron in headless dsh')
+  },
+  execFile: async () => {},
+})
+check('拿不到 electron → 退回 PowerShell', (await filteredSender.health())?.backend === 'powershell')
+check(
+  'notifyTaskDone:false 时 Windows 侧过滤 turn-end',
+  (await filteredSender.send({ kind: 'turn-end', title: 'x', body: 'y' })) === false,
+)
+check(
+  'notifyAttention 默认开：attention 照发',
+  (await filteredSender.send({ kind: 'attention', title: 'x', body: 'y' })) === true,
+)
+check(
+  'allowsPayload 放行未配置的类型',
+  allowsPayload(winSettings, { kind: 'attention' }) === true &&
+    allowsPayload(winSettings, { kind: 'turn-end' }) === false,
+)
+
+// C6. 平台解析与 win32 的 apply 不碰 macOS 应用
+check('resolveSettings 记录平台', resolveSettings({}, 'win32').platform === 'win32')
+const winCtx = makeCtx()
+apply(winCtx.ctx, { notify: false })
+check('win32 + notify:false 不注册任何监听', winCtx.onCalls() === 0, `ctx.on 调用 ${winCtx.onCalls()} 次`)
 
 // ─────────────────────────────────────────────────────────────
 // B. 原有进程级三态（会临时启动 / 收掉 DSHNotch.app）

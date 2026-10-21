@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "刘海余额",
-    "description": "启动 DeepSeek Harness 时自动打开 DSHNotch 刘海余额工具，并在任务完成、需要你确认或回答时发送 macOS 系统通知。"
+    "description": "启动 DeepSeek Harness 时自动打开 DSHNotch 刘海余额工具，并在任务完成、需要你确认或回答时发送系统通知；Windows 上无需额外应用，直接用 DeepSeek Harness 自己的原生通知与任务栏未读红点。"
   }
 }

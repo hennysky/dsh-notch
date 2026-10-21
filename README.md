@@ -269,6 +269,11 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 2. **通知桥**（v1.1.0+）：把 DSH 的任务结束 / 审批 / 提问事件 POST 给 DSHNotch，
    变成 macOS 系统通知（见上面「DSH 通知」）。
 
+> **Windows 用户不需要 DSHNotch**：同一个插件（v1.2.0+）在 Windows 上直接调用
+> DeepSeek Harness 自己的 Electron 通知，并在任务栏图标上显示未读红点；没有 Electron 时
+> 退回 PowerShell toast。也就是说 Windows 上只装插件就够了，见
+> [plugin/README.md](plugin/README.md)。
+
 ```bash
 DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 "$DSH" plugin --profile desktop add /path/to/dsh-notch/plugin

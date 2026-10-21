@@ -7,3 +7,7 @@
         notify: true
         bridgePort: 47810
         notifyAborted: false
+        notifyTaskDone: true
+        notifyAttention: true
+        # auto = 先试 Electron 原生通知，拿不到再退回 PowerShell toast（仅 Windows 生效）
+        notifyBackend: auto

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Notch Balance",
-    "description": "Launches the DSHNotch balance widget whenever DeepSeek Harness starts, and sends native macOS notifications when a task finishes or DSH needs your approval or answer."
+    "description": "Launches the DSHNotch widget whenever DeepSeek Harness starts, and sends native notifications when a task finishes or DSH needs your approval or answer — macOS notifications via DSHNotch, Windows notifications from DeepSeek Harness itself (no extra app)."
   }
 }

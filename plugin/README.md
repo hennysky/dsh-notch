@@ -1,15 +1,20 @@
 # dsh-plugin-notch-balance
 
 DSH 插件：**启动 DeepSeek Harness 时自动拉起 DSHNotch 刘海余额工具，并把
-「任务完成 / 需要你确认 / 需要你回答」推送成 macOS 系统通知。**
+「任务完成 / 需要你确认 / 需要你回答」推送成系统通知。**
+
+- **macOS**：由 `DSHNotch.app` 发通知（本地 HTTP 桥，署名 DSH Notch）
+- **Windows**：不需要额外应用——直接由 DeepSeek Harness 自己发（Electron 原生通知 +
+  任务栏未读红点）；拿不到 Electron 时退回 PowerShell toast
 
 ## 为什么是「拉起一个应用」而不是「把界面搬进 DSH」
 
 刘海覆盖层要求：窗口层级高于菜单栏、无边框、不抢焦点的 panel、排除出 Exposé 与窗口循环。
 这些只有原生 `NSWindow` 能做到；Electron 的 `BrowserWindow` 拿不到那个层级。
 
-所以这个插件的职责是**生命周期管理 + 事件桥接**，界面和通知都由 `DSHNotch.app` 负责。
-两者是配套关系，不是替代关系。
+所以 macOS 上这个插件的职责是**生命周期管理 + 事件桥接**，界面和通知都由 `DSHNotch.app`
+负责。两者是配套关系，不是替代关系。Windows 没有刘海应用，通知由宿主进程直接发（见下面的
+「Windows」一节）。
 
 ## 装什么
 
@@ -59,6 +64,46 @@ cat "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.
 ```bash
 pgrep -x DSHNotch
 ```
+
+## Windows：不需要额外应用
+
+Windows 上 DSH 同样是 Electron 主进程跑 Host，插件和宿主在同一个进程里。所以通知
+**直接由 DeepSeek Harness 自己发**，不需要像 macOS 那样再装一个伴侣应用：
+
+```
+DSH Host 进程（Electron 主进程）
+  └─ dsh-plugin-notch-balance（本插件）
+        ├─ import('electron') → new Notification(...)  ← 署名 DeepSeek Harness
+        │    └ 点击 → BrowserWindow 恢复/聚焦
+        ├─ 未读 → win.setOverlayIcon(红点)  ← 任务栏图标上的持久红点
+        └─ 拿不到 electron 时退回 PowerShell 5.1 的 WinRT toast
+```
+
+| 行为 | 说明 |
+|---|---|
+| 通知署名 | DeepSeek Harness（Electron 原生通知）；PowerShell 兜底时署名 Windows PowerShell |
+| 点击通知 | 恢复最小化窗口并聚焦 DSH；同时清掉任务栏红点 |
+| 未读红点 | 投递成功且 DSH 不在前台时，在任务栏图标上叠加红点；窗口获得焦点即清除 |
+| 无 Electron 时 | 例如 `dsh web` 在 Node 里跑：用 PowerShell `-EncodedCommand` 发 WinRT toast |
+| macOS | 仍然走 DSHNotch 的本地 HTTP 桥（上面的链路） |
+
+Windows 相关配置（`cordis.patch.yml` 的 `config`）：
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `notifyTaskDone` | `true` | Windows 侧是否通知「任务完成 / 失败 / 阻塞 / 中断」 |
+| `notifyAttention` | `true` | Windows 侧是否通知审批与提问 |
+| `notifyBackend` | `auto` | `auto` / `electron` / `powershell` |
+| `powershellPath` | `powershell.exe` | 兜底通知使用的 PowerShell |
+
+验证（不需要 Windows 机器也能跑大部分）：
+
+```bash
+NOTCH_SKIP_PROCESS_TESTS=1 node plugin/test.mjs
+```
+
+测试里注入了假的 `electron`（Notification / BrowserWindow / setOverlayIcon），
+所以 Windows 分支的逻辑在 macOS 上也能验证；真实的系统通知只能在 Windows 上肉眼确认。
 
 ## DSH 通知（任务完成 / 需要你处理）
 

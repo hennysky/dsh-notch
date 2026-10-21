@@ -66,16 +66,29 @@ export const DEFAULT_BRIDGE_PORT = 47810
 const BRIDGE_TIMEOUT_MS = 2000
 
 export const DEFAULTS = {
-  /** 应用位置。可以在 cordis.patch.yml 的 config 里改。 */
+  /** macOS 伴侣应用位置。可以在 cordis.patch.yml 的 config 里改。 */
   appPath: '/Applications/DSHNotch.app',
-  /** 插件卸载时是否同时收掉应用。 */
+  /** 插件卸载时是否同时收掉 macOS 伴侣应用。 */
   quitOnUnload: false,
   /** 通知总开关；false 时一个监听器都不注册。 */
   notify: true,
-  /** 与 DSHNotch 的本地桥端口。 */
+  /** 与 DSHNotch 的本地桥端口（macOS）。 */
   bridgePort: DEFAULT_BRIDGE_PORT,
   /** 用户自己中断的轮次默认不通知（他本来就知道）。 */
   notifyAborted: false,
+  /** 轮次结束通知。Windows 侧由插件过滤；macOS 由 DSHNotch 设置页控制。 */
+  notifyTaskDone: true,
+  /** 审批 / 提问通知。Windows 侧由插件过滤；macOS 由 DSHNotch 设置页控制。 */
+  notifyAttention: true,
+  /**
+   * Windows 通知后端：
+   * - `auto`（默认）：先试 Electron 原生通知，拿不到再退回 PowerShell toast
+   * - `electron`：只走 Electron 原生通知
+   * - `powershell`：只走 PowerShell toast（无 Electron 的 `dsh web` 场景）
+   */
+  notifyBackend: 'auto',
+  /** PowerShell 可执行文件（Windows 兜底通知用）。 */
+  powershellPath: 'powershell.exe',
 }
 
 /** 根会话的标题/正文模板。未列出的 reason.kind 一律不通知。 */
@@ -474,6 +487,307 @@ export class NotifyBridge {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Windows：Electron 原生通知 + PowerShell toast 兜底
+// ─────────────────────────────────────────────────────────────
+//
+// Windows 上 DSH 同样是 Electron 主进程跑 Host，插件和宿主在同一个进程里。
+// 所以**不需要再写一个原生伴侣应用**：直接 import('electron') 用它的
+// Notification API，通知就署名 DeepSeek Harness、点击能聚焦窗口；
+// 「未读不会消失」用任务栏图标上的 overlay badge（红点）实现。
+//
+// 唯一的不确定点是 DSH 的插件加载器允不允许 import('electron')。
+// 因此 auto 模式先试 Electron，失败再退回 PowerShell 5.1 的 WinRT toast
+// （Win10/11 自带，零依赖；署名是 Windows PowerShell，点击无行为）。
+
+/** 16×16 红点（任务栏 overlay badge）。红色 #E53E3E，带抗锯齿边缘。 */
+export const UNREAD_BADGE_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAS0lEQVR42mNgGLTgqZ2dDxBXQrEPqRpvAvF/NHyToEFQzf8JYB98BtwkwoCblNiO2xXQwCLWgEqaGECZFygORKpEI8UJiSpJme4AANT++XHHVJEfAAAAAElFTkSuQmCC'
+
+/** XML 文本转义（toast 模板会原样解析这些字符）。 */
+export function escapeXml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case '&': return '&amp;'
+      case '<': return '&lt;'
+      case '>': return '&gt;'
+      case '"': return '&quot;'
+      case "'": return '&apos;'
+      default: return character
+    }
+  })
+}
+
+/** 生成 ToastGeneric 的 toast XML。 */
+export function buildToastXml({ title, body }) {
+  return (
+    '<toast activationType="foreground" scenario="default">'
+    + '<visual><binding template="ToastGeneric">'
+    + `<text>${escapeXml(title)}</text>`
+    + `<text>${escapeXml(body)}</text>`
+    + '</binding></visual><audio silent="false"/></toast>'
+  )
+}
+
+/**
+ * 生成 PowerShell toast 脚本。
+ *
+ * XML 以 base64 内嵌，避免标题/正文里的引号、`'@` 之类破坏 here-string；
+ * 主题内容不进命令行，也不担心控制台编码。
+ */
+export function buildPowerShellToastScript(payload) {
+  const encoded = Buffer.from(buildToastXml(payload), 'utf8').toString('base64')
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    '[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null',
+    '[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null',
+    `$xmlText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))`,
+    '$doc = New-Object Windows.Data.Xml.Dom.XmlDocument',
+    '$doc.LoadXml($xmlText)',
+    '$toast = New-Object Windows.UI.Notifications.ToastNotification $doc',
+    '[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast)',
+  ].join('\n')
+}
+
+/** PowerShell `-EncodedCommand`：UTF-16LE + base64，绕过所有引号问题。 */
+export function encodePowerShellCommand(script) {
+  return Buffer.from(String(script), 'utf16le').toString('base64')
+}
+
+/** `powershell.exe` 的参数（不含可执行文件本身）。 */
+export function buildPowerShellArgs(script) {
+  return ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+    '-EncodedCommand', encodePowerShellCommand(script)]
+}
+
+/**
+ * 纯 PowerShell toast 发送器（Electron 不可用时）。
+ *
+ * 永远不抛：通知失败不能影响 DSH 的会话或审批流程。
+ */
+export class PowerShellToastNotifier {
+  constructor({ execFile: run = execFileAsync, log: logger = () => {}, powershellPath = DEFAULTS.powershellPath } = {}) {
+    this.execFile = run
+    this.log = logger
+    this.powershellPath = powershellPath
+  }
+
+  async send(payload) {
+    try {
+      await this.execFile(this.powershellPath, buildPowerShellArgs(buildPowerShellToastScript(payload)), {
+        windowsHide: true,
+        timeout: 5000,
+      })
+      this.log(`通知：PowerShell toast 已发送「${payload.title}」`)
+      return true
+    } catch (error) {
+      this.log(`通知：PowerShell toast 失败（${describeError(error)}）`)
+      return false
+    }
+  }
+
+  async health() {
+    return { backend: 'powershell', supported: true }
+  }
+}
+
+/**
+ * Electron 原生通知发送器。
+ *
+ * - 通知署名 DeepSeek Harness（宿主自己的 app identity）
+ * - 点击通知 → 恢复/聚焦 DSH 窗口
+ * - 有未读时在任务栏图标上叠加红点；窗口获得焦点（或点通知）时清除
+ *
+ * `electron` 由调用方注入，测试可以用假对象直接验证行为。
+ */
+export class ElectronNotifier {
+  constructor({ electron, log: logger = () => {}, badgeDataUrl = UNREAD_BADGE_PNG } = {}) {
+    this.electron = electron ?? {}
+    this.log = logger
+    this.badgeDataUrl = badgeDataUrl
+    this.unread = 0
+    this.windows = new Set()
+    this.bound = false
+  }
+
+  async health() {
+    let supported = false
+    try {
+      const notification = this.electron.Notification
+      supported = typeof notification?.isSupported === 'function'
+        ? notification.isSupported() === true
+        : typeof notification === 'function'
+    } catch {
+      supported = false
+    }
+    if (!supported) this.log('通知：Electron Notification 不可用')
+    return { backend: 'electron', supported }
+  }
+
+  /** 订阅窗口事件：新窗口也要能叠 badge，窗口聚焦时清未读。 */
+  bind() {
+    if (this.bound) return
+    this.bound = true
+    const { app, BrowserWindow } = this.electron
+    app?.on?.('browser-window-created', (_event, window) => this.watch(window))
+    app?.on?.('browser-window-focus', () => this.clearUnread())
+    for (const window of BrowserWindow?.getAllWindows?.() ?? []) this.watch(window)
+  }
+
+  watch(window) {
+    if (window === null || window === undefined || this.windows.has(window)) return
+    this.windows.add(window)
+    window.on?.('closed', () => {
+      this.windows.delete(window)
+      this.applyOverlay()
+    })
+  }
+
+  #badgeImage() {
+    try {
+      return this.electron.nativeImage?.createFromDataURL?.(this.badgeDataUrl) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  applyOverlay() {
+    const image = this.unread > 0 ? this.#badgeImage() : null
+    const description = this.unread > 0 ? `${this.unread} 条未读通知` : ''
+    for (const window of this.windows) {
+      try {
+        window.setOverlayIcon?.(image, description)
+      } catch (error) {
+        this.log(`通知：设置任务栏徽标失败（${describeError(error)}）`)
+      }
+    }
+  }
+
+  markUnread() {
+    this.unread += 1
+    this.applyOverlay()
+    this.log(`通知：未读 +1 → ${this.unread}（任务栏红点）`)
+  }
+
+  clearUnread() {
+    if (this.unread === 0) return
+    this.unread = 0
+    this.applyOverlay()
+    this.log('通知：未读已清零（任务栏红点移除）')
+  }
+
+  /** 从通知或托盘回到 DSH：恢复最小化、显示并聚焦主窗口。 */
+  focusDsh() {
+    const { BrowserWindow } = this.electron
+    let window = null
+    try {
+      window = BrowserWindow?.getFocusedWindow?.() ?? BrowserWindow?.getAllWindows?.()[0] ?? null
+    } catch {
+      window = null
+    }
+    if (window !== null) {
+      try {
+        if (typeof window.isMinimized === 'function' && window.isMinimized()) window.restore?.()
+        window.show?.()
+        window.focus?.()
+      } catch (error) {
+        this.log(`通知：聚焦 DSH 窗口失败（${describeError(error)}）`)
+      }
+    }
+    this.clearUnread()
+  }
+
+  async send(payload) {
+    try {
+      const { Notification, BrowserWindow } = this.electron
+      if (typeof Notification !== 'function') throw new Error('Electron Notification 不可用')
+      if (typeof Notification.isSupported === 'function' && !Notification.isSupported()) {
+        throw new Error('系统不支持 Electron 通知')
+      }
+      const notification = new Notification({
+        title: payload.title,
+        body: payload.body,
+        silent: false,
+      })
+      notification.on?.('click', () => this.focusDsh())
+      notification.show()
+      let focused = null
+      try {
+        focused = BrowserWindow?.getFocusedWindow?.() ?? null
+      } catch {
+        focused = null
+      }
+      // 用户正看着 DSH：弹通知但不留红点，免得打扰
+      if (focused === null) this.markUnread()
+      this.log(`通知：Windows 原生通知已发送「${payload.title}」`)
+      return true
+    } catch (error) {
+      this.log(`通知：Windows 原生通知发送失败（${describeError(error)}）`)
+      return false
+    }
+  }
+}
+
+/** 按设置过滤通知类型（Windows 侧；macOS 由 DSHNotch 设置页过滤）。 */
+export function allowsPayload(settings, payload) {
+  if (payload?.kind === 'turn-end' && settings.notifyTaskDone === false) return false
+  if (payload?.kind === 'attention' && settings.notifyAttention === false) return false
+  return true
+}
+
+/**
+ * 创建 Windows 通知发送器。
+ *
+ * 异步选择后端（Electron 需要动态 import），但对外只暴露 `send` / `health`：
+ * 选择完成前的通知会排队等它，不会丢。
+ */
+export function createWindowsSender({
+  settings,
+  log: logger = log,
+  importModule = (specifier) => import(specifier),
+  execFile: run = execFileAsync,
+} = {}) {
+  const ready = (async () => {
+    if (settings.notifyBackend !== 'powershell') {
+      try {
+        const imported = await importModule('electron')
+        // Electron 以 CommonJS 内置模块暴露；不同 Electron/Node 版本下
+        // 动态 import 的命名导出形态可能不同，合并成普通对象最稳。
+        const electron =
+          imported?.default !== undefined ? { ...imported.default, ...imported } : imported
+        const notifier = new ElectronNotifier({ electron, log: logger })
+        const health = await notifier.health()
+        if (health.supported) {
+          notifier.bind()
+          logger('通知：Windows 后端 = Electron 原生通知（署名 DeepSeek Harness）')
+          return notifier
+        }
+      } catch (error) {
+        logger(`通知：在宿主里拿不到 electron（${describeError(error)}），退回 PowerShell toast`)
+      }
+    }
+    logger('通知：Windows 后端 = PowerShell toast（署名 Windows PowerShell）')
+    return new PowerShellToastNotifier({ execFile: run, log: logger, powershellPath: settings.powershellPath })
+  })()
+
+  return {
+    backend: 'windows',
+    async send(payload) {
+      if (!allowsPayload(settings, payload)) {
+        logger(`通知：按设置跳过 ${payload?.kind ?? '未知类型'}（Windows 侧过滤）`)
+        return false
+      }
+      const notifier = await ready.catch(() => null)
+      if (notifier === null) return false
+      return notifier.send(payload)
+    },
+    async health() {
+      const notifier = await ready.catch(() => null)
+      return notifier === null ? null : notifier.health()
+    },
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // 事件 → 通知：纯监听器工厂（便于测试，不直接依赖 ctx）
 // ─────────────────────────────────────────────────────────────
 
@@ -578,7 +892,7 @@ export function createNotificationRuntime({
 // ─────────────────────────────────────────────────────────────
 
 /** 合并 config 并做边界收敛；不合法的端口回落到默认值。 */
-export function resolveSettings(config) {
+export function resolveSettings(config, platform = process.platform) {
   const overrides = config !== null && typeof config === 'object' ? config : {}
   const settings = { ...DEFAULTS, ...overrides }
 
@@ -588,7 +902,12 @@ export function resolveSettings(config) {
     bridgePort = DEFAULT_BRIDGE_PORT
   }
 
+  const notifyBackend = ['auto', 'electron', 'powershell'].includes(settings.notifyBackend)
+    ? settings.notifyBackend
+    : 'auto'
+
   return {
+    platform,
     appPath:
       typeof settings.appPath === 'string' && settings.appPath !== ''
         ? settings.appPath
@@ -597,14 +916,20 @@ export function resolveSettings(config) {
     notify: settings.notify !== false,
     bridgePort,
     notifyAborted: settings.notifyAborted === true,
+    notifyTaskDone: settings.notifyTaskDone !== false,
+    notifyAttention: settings.notifyAttention !== false,
+    notifyBackend,
+    powershellPath:
+      typeof settings.powershellPath === 'string' && settings.powershellPath !== ''
+        ? settings.powershellPath
+        : DEFAULTS.powershellPath,
   }
 }
 
 /** 用 `ctx.effect` 注册三个通知监听；卸载时由 effect 的清理函数全部摘除。 */
-function registerNotificationListeners(ctx, settings) {
-  const bridge = new NotifyBridge({ port: settings.bridgePort, log })
+function registerNotificationListeners(ctx, settings, sender) {
   const runtime = createNotificationRuntime({
-    bridge,
+    bridge: sender,
     notifyAborted: settings.notifyAborted,
     log,
   })
@@ -647,7 +972,7 @@ function registerNotificationListeners(ctx, settings) {
       return () => {}
     }
 
-    log(`通知：已注册 3 个监听（桥端口 ${settings.bridgePort}）`)
+    log(`通知：已注册 3 个监听（${settings.platform}）`)
 
     return () => {
       for (const dispose of disposers) {
@@ -661,45 +986,58 @@ function registerNotificationListeners(ctx, settings) {
     }
   }, 'notch-balance.notify')
 
-  // 启动时顺便看一眼桥和通知权限；失败只写日志，不影响任何流程。
-  void bridge.health()
+  // 启动时顺便看一眼后端状态；失败只写日志，不影响任何流程。
+  void sender.health?.()
 }
 
 export function apply(ctx, config = {}) {
   const settings = resolveSettings(config)
 
-  // 激活即执行，不阻塞 DSH 启动
-  void (async () => {
-    if (!existsSync(settings.appPath)) {
-      log(`跳过：未找到 ${settings.appPath}`)
-      return
-    }
-    if (await isRunning()) {
-      log('已在运行，不重复启动')
-      return
-    }
-    try {
-      await launch(settings.appPath)
-      log(`已随 DSH 启动：${settings.appPath}`)
-    } catch (error) {
-      log(`启动失败：${error?.message ?? error}`)
-    }
-  })()
+  // macOS：确保 DSHNotch.app 在跑（Windows 不需要伴侣应用，通知直接由宿主进程发）
+  if (settings.platform === 'darwin') {
+    // 激活即执行，不阻塞 DSH 启动
+    void (async () => {
+      if (!existsSync(settings.appPath)) {
+        log(`跳过：未找到 ${settings.appPath}`)
+        return
+      }
+      if (await isRunning()) {
+        log('已在运行，不重复启动')
+        return
+      }
+      try {
+        await launch(settings.appPath)
+        log(`已随 DSH 启动：${settings.appPath}`)
+      } catch (error) {
+        log(`启动失败：${error?.message ?? error}`)
+      }
+    })()
 
-  if (settings.quitOnUnload) {
-    ctx.effect(
-      () => () => {
-        void execFileAsync('/usr/bin/pkill', ['-x', PROCESS_NAME]).catch(() => {})
-        log('插件卸载，已收掉刘海工具')
-      },
-      'notch-balance.quitOnUnload',
-    )
+    if (settings.quitOnUnload) {
+      ctx.effect(
+        () => () => {
+          void execFileAsync('/usr/bin/pkill', ['-x', PROCESS_NAME]).catch(() => {})
+          log('插件卸载，已收掉刘海工具')
+        },
+        'notch-balance.quitOnUnload',
+      )
+    }
   }
 
   if (!settings.notify) return
 
   try {
-    registerNotificationListeners(ctx, settings)
+    if (settings.platform === 'darwin') {
+      registerNotificationListeners(
+        ctx,
+        settings,
+        new NotifyBridge({ port: settings.bridgePort, log }),
+      )
+    } else if (settings.platform === 'win32') {
+      registerNotificationListeners(ctx, settings, createWindowsSender({ settings }))
+    } else {
+      log(`通知：当前平台 ${settings.platform} 没有通知后端，已跳过`)
+    }
   } catch (error) {
     // 通知是增值功能：注册失败也绝不能拖垮插件或 DSH 启动。
     log(`通知：初始化失败（${describeError(error)}），已跳过系统通知`)

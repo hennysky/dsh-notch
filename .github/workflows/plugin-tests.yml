@@ -1,0 +1,40 @@
+name: Plugin tests
+
+# 插件逻辑不依赖 macOS：Windows 分支注入假 electron 后可以在任意平台跑，
+# 所以用三平台矩阵把「Windows 上到底能不能跑」变成 CI 里的可见结论。
+on:
+  push:
+    paths:
+      - 'plugin/**'
+      - '.github/workflows/plugin-tests.yml'
+  pull_request:
+    paths:
+      - 'plugin/**'
+      - '.github/workflows/plugin-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Syntax check
+        shell: bash
+        run: node --check plugin/index.js && node --check plugin/test.mjs
+
+      - name: Plugin tests (skip macOS process-level tests)
+        shell: bash
+        env:
+          NOTCH_SKIP_PROCESS_TESTS: '1'
+        run: node plugin/test.mjs
