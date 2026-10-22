@@ -38,8 +38,9 @@
 
 import { execFile, spawn } from 'node:child_process'
 import { appendFileSync, existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 
@@ -1292,6 +1293,75 @@ function registerSessionCost(ctx, settings) {
   ctx.effect(() => {
     let detachEvent = null
     let detachRoute = null
+    // Client UI 插件直连本机桥写 active-session.json；这里轮询文件兜底，
+    // 不依赖 DSH Web 网关对 /api 路由的鉴权。
+    const activeFile = path.join(path.dirname(settings.sessionCostFile), 'active-session.json')
+    let lastActiveStamp = 0
+    let readingActive = false
+    const pollTimer = setInterval(() => {
+      void (async () => {
+        if (readingActive) return
+        readingActive = true
+        try {
+          const raw = await readFile(activeFile, 'utf8')
+          const data = JSON.parse(raw)
+          const stamp = Number(data?.updatedAt) || 0
+          if (stamp > lastActiveStamp && typeof data?.sessionId === 'string' && data.sessionId !== '') {
+            lastActiveStamp = stamp
+            tracker.setActive(data.sessionId, 'client')
+            log(`会话花费：桥上报当前会话 ${data.sessionId}`)
+          }
+        } catch {
+          // 文件还没出现或正在写：下一轮再试
+        } finally {
+          readingActive = false
+        }
+      })()
+    }, 2000)
+    pollTimer.unref?.()
+
+    // 客户端插件加载诊断：clientModules 服务里有没有我们的客户端 bundle。
+    const debugTimer = setTimeout(() => {
+      void (async () => {
+        try {
+          const clientModules = ctx.get?.('clientModules')
+          const info = {
+            at: new Date().toISOString(),
+            hasClientModules: clientModules !== undefined,
+            clientPath: null,
+            graphKeys: null,
+            rows: null,
+            error: null,
+          }
+          try {
+            info.clientPath = clientModules?.clientPath?.('dsh-plugin-notch-balance') ?? null
+          } catch (error) {
+            info.error = `clientPath: ${String(error?.message ?? error)}`
+          }
+          try {
+            const graph = clientModules?.graph?.()
+            if (graph !== null && typeof graph === 'object') {
+              info.graphKeys = Object.keys(graph).slice(0, 20)
+              const rows = graph.rows ?? graph.entries ?? graph.plugins
+              if (Array.isArray(rows)) {
+                info.rows = rows
+                  .slice(0, 300)
+                  .map((row) => (typeof row === 'string' ? row : (row?.id ?? row?.name ?? null)))
+              }
+            }
+          } catch (error) {
+            info.error = `${info.error ?? ''} graph: ${String(error?.message ?? error)}`
+          }
+          const directory = path.dirname(settings.sessionCostFile)
+          await mkdir(directory, { recursive: true })
+          await writeFile(path.join(directory, 'client-debug.json'), `${JSON.stringify(info, null, 2)}\n`, 'utf8')
+        } catch {
+          // 诊断失败不影响主功能
+        }
+      })()
+    }, 1500)
+    debugTimer.unref?.()
+
     try {
       detachEvent = ctx.on(
         'session/event',
@@ -1322,6 +1392,8 @@ function registerSessionCost(ctx, settings) {
       log(`会话花费：注册失败（${describeError(error)}），已跳过界面定位`)
     }
     return () => {
+      clearInterval(pollTimer)
+      clearTimeout(debugTimer)
       if (typeof detachEvent === 'function') detachEvent()
       if (typeof detachRoute === 'function') detachRoute()
       tracker.dispose()

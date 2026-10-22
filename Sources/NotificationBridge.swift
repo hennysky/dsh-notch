@@ -72,6 +72,7 @@ private struct HTTPResponse {
         case 404: return "Not Found"
         case 405: return "Method Not Allowed"
         case 408: return "Request Timeout"
+        case 204: return "No Content"
         case 413: return "Payload Too Large"
         default: return "Internal Server Error"
         }
@@ -82,6 +83,12 @@ private struct HTTPResponse {
         var head = "HTTP/1.1 \(status) \(reason)\r\n"
         head += "Content-Type: application/json; charset=utf-8\r\n"
         head += "Content-Length: \(payload.count)\r\n"
+        // 浏览器里的 DSH Client UI 插件会直接 POST 到本机桥（绕过 DSH 自己的鉴权网关），
+        // 所以桥必须允许跨源；只监听 127.0.0.1，没有暴露到局域网。
+        head += "Access-Control-Allow-Origin: *\r\n"
+        head += "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+        head += "Access-Control-Allow-Headers: content-type\r\n"
+        head += "Access-Control-Allow-Private-Network: true\r\n"
         head += "Cache-Control: no-store\r\n"
         head += "Connection: close\r\n\r\n"
         var data = Data(head.utf8)
@@ -523,7 +530,19 @@ final class NotificationBridge {
     // MARK: 路由（主线程）
 
     private func handle(_ request: HTTPRequest) -> HTTPResponse {
+        // 预检请求：浏览器发 POST + JSON 前会先来一次 OPTIONS。
+        if request.method == "OPTIONS" { return .json([:], status: 204) }
         switch request.path {
+        case "/probe":
+            guard request.method == "POST" else {
+                return .error(405, "/probe 只支持 POST")
+            }
+            return handleProbe(request.body)
+        case "/active-session":
+            guard request.method == "POST" else {
+                return .error(405, "/active-session 只支持 POST")
+            }
+            return handleActiveSession(request.body)
         case "/health":
             guard request.method == "GET" else {
                 return .error(405, "/health 只支持 GET")
@@ -547,6 +566,60 @@ final class NotificationBridge {
             "version": version,
             "authorization": authorization.rawValue,
         ])
+    }
+
+    /// Client UI 插件的诊断探针：把请求体追加到 ~/.dsh/notch/client-probe.log。
+    /// 这是排查「客户端插件到底有没有加载」的最直接证据。
+    private func handleProbe(_ data: Data) -> HTTPResponse {
+        let directory = Self.notchDirectory()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("client-probe.log")
+        let text = String(data: data.prefix(4096), encoding: .utf8) ?? ""
+        let line = "\(Self.isoNow()) \(text)\n"
+        if let handle = try? FileHandle(forWritingTo: file) {
+            handle.seekToEndOfFile()
+            handle.write(Data(line.utf8))
+            try? handle.close()
+        } else {
+            try? Data(line.utf8).write(to: file)
+        }
+        return .json(["ok": true])
+    }
+
+    /// 浏览器插件直连桥上报「当前会话」；宿主插件会轮询这个文件。
+    private func handleActiveSession(_ data: Data) -> HTTPResponse {
+        struct Payload: Decodable { let sessionId: String }
+        guard let payload = try? JSONDecoder().decode(Payload.self, from: data),
+              !payload.sessionId.isEmpty else {
+            return .error(400, "缺少 sessionId")
+        }
+        let directory = Self.notchDirectory()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("active-session.json")
+        let object: [String: Any] = [
+            "sessionId": payload.sessionId,
+            "updatedAt": Int(Date().timeIntervalSince1970 * 1000),
+        ]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+            return .error(500, "序列化失败")
+        }
+        do {
+            try encoded.write(to: file, options: .atomic)
+            dshLog("桥上报当前会话：\(payload.sessionId)")
+            return .json(["ok": true])
+        } catch {
+            return .error(500, "写入失败：\(error.localizedDescription)")
+        }
+    }
+
+    private static func notchDirectory() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".dsh/notch")
+    }
+
+    private static func isoNow() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: Date())
     }
 
     private func handleNotify(_ data: Data) -> HTTPResponse {
