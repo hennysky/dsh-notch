@@ -51,6 +51,13 @@ import {
   sessionName,
 } from './index.js'
 import {
+  CALENDAR_DAYS,
+  TokenActivityTracker,
+  buildActivitySnapshot,
+  foldActivity,
+  usageTokens,
+} from './activity.js'
+import {
   buildSessionCostSnapshot,
   beijingParts,
   costForUsage,
@@ -367,7 +374,7 @@ check('桥不可达：写入了失败日志', fallbackLogs.some((line) => line.i
 
 const bridge = await startMockBridge()
 const harness = makeCtx()
-apply(harness.ctx, { appPath: NOT_AN_APP, bridgePort: bridge.port, notifyAborted: false, sessionCost: false }, { platform: 'darwin' })
+apply(harness.ctx, { appPath: NOT_AN_APP, bridgePort: bridge.port, notifyAborted: false, sessionCost: false, tokenActivity: false }, { platform: 'darwin' })
 
 check(
   'notify:true：注册了 3 个监听',
@@ -541,7 +548,7 @@ await bridge.close()
 
 const offBridge = await startMockBridge()
 const offHarness = makeCtx()
-apply(offHarness.ctx, { appPath: NOT_AN_APP, notify: false, sessionCost: false, bridgePort: offBridge.port }, { platform: 'darwin' })
+apply(offHarness.ctx, { appPath: NOT_AN_APP, notify: false, sessionCost: false, tokenActivity: false, bridgePort: offBridge.port }, { platform: 'darwin' })
 check('notify:false：ctx.on 一次都没被调用', offHarness.onCalls() === 0, `ctx.on 调用 ${offHarness.onCalls()} 次`)
 check('notify:false：不注册任何 effect', offHarness.effectCleanups.length === 0, `effect ${offHarness.effectCleanups.length} 个`)
 await sleep(150)
@@ -806,7 +813,7 @@ check(
 // C6. 平台解析与 win32 的 apply 不碰 macOS 应用
 check('resolveSettings 记录平台', resolveSettings({}, 'win32').platform === 'win32')
 const winCtx = makeCtx()
-apply(winCtx.ctx, { notify: false, sessionCost: false }, { platform: 'win32' })
+apply(winCtx.ctx, { notify: false, sessionCost: false, tokenActivity: false }, { platform: 'win32' })
 check('win32 + notify:false 不注册任何监听', winCtx.onCalls() === 0, `ctx.on 调用 ${winCtx.onCalls()} 次`)
 
 // ─────────────────────────────────────────────────────────────
@@ -1020,7 +1027,7 @@ check('路由：未知会话 → 404', response.statusCode === 404, `${response.
 
 // apply：sessionCost 开启时只注册自己的监听（通知关闭也不影响）
 const sessionCostCtx = makeCtx()
-apply(sessionCostCtx.ctx, { appPath: NOT_AN_APP, notify: false, sessionCost: true }, { platform: 'darwin' })
+apply(sessionCostCtx.ctx, { appPath: NOT_AN_APP, notify: false, sessionCost: true, tokenActivity: false }, { platform: 'darwin' })
 check(
   'apply：sessionCost 开启 → 注册 1 个 session/event 监听 + 1 个 effect',
   sessionCostCtx.onCalls() === 1 && sessionCostCtx.effectCleanups.length === 1,
@@ -1033,6 +1040,28 @@ check(
 )
 sessionCostCtx.unload()
 check('apply：卸载后监听摘除', sessionCostCtx.totalActive() === 0, `active=${sessionCostCtx.totalActive()}`)
+
+const tokenActivityCtx = makeCtx()
+apply(tokenActivityCtx.ctx, {
+  appPath: NOT_AN_APP,
+  notify: false,
+  sessionCost: false,
+  tokenActivity: true,
+  tokenActivityFile: '/tmp/token-activity-apply-test.json',
+  tokenActivityCacheFile: '/tmp/token-activity-cache-apply-test.json',
+}, { platform: 'darwin' })
+check(
+  'apply：tokenActivity 开启 → 注册 1 个 session/event 监听 + 1 个 effect',
+  tokenActivityCtx.onCalls() === 1 && tokenActivityCtx.effectCleanups.length === 1,
+  `ctx.on=${tokenActivityCtx.onCalls()} effects=${tokenActivityCtx.effectCleanups.length}`,
+)
+check(
+  'apply：tokenActivity 监听带 global',
+  tokenActivityCtx.records('session/event')[0]?.options?.global === true,
+  JSON.stringify(tokenActivityCtx.records('session/event')[0]?.options),
+)
+tokenActivityCtx.unload()
+check('apply：tokenActivity 卸载后监听摘除', tokenActivityCtx.totalActive() === 0, `active=${tokenActivityCtx.totalActive()}`)
 
 // 子智能体：根会话 + 后代会话要合并成一个「窗口」的花费
 const childEvents = [
@@ -1161,6 +1190,153 @@ check(
 seededTracker.dispose()
 
 // ─────────────────────────────────────────────────────────────
+// E. Token 用量日历（按天聚合 token / 预估金额）
+// ─────────────────────────────────────────────────────────────
+
+console.log('\n── E. Token 用量日历 ──')
+
+check(
+  'usageTokens：优先 totalTokens',
+  usageTokens({ totalTokens: 1234, inputTokens: 1 }) === 1234 &&
+    usageTokens({ inputTokens: 100, cacheReadTokens: 200, cacheWriteTokens: 300, outputTokens: 400 }) === 1000,
+)
+
+const activityEvents = [
+  {
+    type: 'assistant/message',
+    time: peakDate.getTime(),
+    data: {
+      message: { source: { provider: 'deepseek-account', model: 'deepseek-flash' } },
+      usage: { inputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, totalTokens: 1_000_000 },
+    },
+  },
+  {
+    type: 'assistant/message',
+    time: offPeakDate.getTime(),
+    data: {
+      message: { source: { provider: 'deepseek-account', model: 'deepseek-flash' } },
+      usage: { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 1_000_000, totalTokens: 1_000_000 },
+    },
+  },
+]
+const activityDays = foldActivity(activityEvents)
+check(
+  'foldActivity：按北京时间归到同一天',
+  activityDays['2026-10-21']?.tokens === 2_000_000,
+  JSON.stringify(activityDays),
+)
+check(
+  'foldActivity：金额按每条消息自己的时段',
+  Math.abs((activityDays['2026-10-21']?.cost ?? 0) - 6) < 1e-9,
+  String(activityDays['2026-10-21']?.cost),
+)
+check(
+  'foldActivity：跳过 inherited 继承事件',
+  Object.keys(foldActivity(activityEvents, { inheritedEventCount: 2 })).length === 0,
+)
+check(
+  'foldActivity：非 assistant/message 不计',
+  Object.keys(foldActivity([{ type: 'tool/call', time: peakDate.getTime(), data: {} }])).length === 0,
+)
+
+const mergedActivity = {
+  schema: 1,
+  updatedAt: 0,
+  sessions: {
+    'session-a': { mtime: 0, days: { '2026-10-21': { tokens: 1234, cost: 0.5 } } },
+    'session-b': { mtime: 0, days: { '2026-10-21': { tokens: 66, cost: 0.25 }, '2026-10-20': { tokens: 10, cost: 0.01 } } },
+  },
+}
+const activitySnapshot = buildActivitySnapshot(mergedActivity, peakDate.getTime())
+check('activity snapshot：固定 371 天', activitySnapshot.days.length === CALENDAR_DAYS, String(activitySnapshot.days.length))
+check(
+  'activity snapshot：最后一天是今天（北京）',
+  activitySnapshot.days.at(-1)?.date === '2026-10-21',
+  activitySnapshot.days.at(-1)?.date,
+)
+check(
+  'activity snapshot：跨会话按天合并',
+  activitySnapshot.days.at(-1)?.tokens === 1300 && Math.abs(activitySnapshot.days.at(-1)?.cost - 0.75) < 1e-9,
+  JSON.stringify(activitySnapshot.days.at(-1)),
+)
+check(
+  'activity snapshot：范围/口径字段',
+  activitySnapshot.range.days === CALENDAR_DAYS && activitySnapshot.cost.estimated === true,
+  JSON.stringify(activitySnapshot.range),
+)
+
+// tracker：注入 fake scanFiles / readSession / save，验证回填与实时累加
+const activityWrites = []
+const activityCtx = { get: () => undefined }
+const activitySettings = {
+  tokenActivityFile: '/tmp/token-activity-test.json',
+  tokenActivityCacheFile: '/tmp/token-activity-cache-test.json',
+  sessionCostPricing: {},
+  sessionCostHolidays: {},
+}
+const activityTracker = new TokenActivityTracker(activityCtx, activitySettings, {
+  now: () => peakDate.getTime(),
+  log: () => {},
+  scanFiles: async () =>
+    new Map([
+      ['session-a', { file: '/tmp/a', mtime: 10 }],
+      ['session-b', { file: '/tmp/b', mtime: 10 }],
+    ]),
+  readSession: async (id) => {
+    if (id === 'session-a') return { events: activityEvents, inheritedEventCount: 0 }
+    return {
+      events: [
+        {
+          type: 'assistant/message',
+          time: peakDate.getTime(),
+          data: {
+            message: { source: { provider: 'deepseek-account', model: 'deepseek-flash' } },
+            usage: { inputTokens: 500_000, totalTokens: 500_000 },
+          },
+        },
+      ],
+      inheritedEventCount: 0,
+    }
+  },
+  save: async (file, value) => {
+    activityWrites.push({ file, value })
+  },
+  debounceMs: 10_000,
+})
+await activityTracker.backfill()
+const activityOut = activityWrites.find((item) => item.file === '/tmp/token-activity-test.json')
+const todayBucket = activityOut?.value?.days?.at(-1)
+check(
+  'activity tracker：回填两个会话并写快照',
+  todayBucket?.tokens === 2_500_000 && Math.abs(todayBucket?.cost - 7) < 1e-9,
+  JSON.stringify(todayBucket),
+)
+check(
+  'activity tracker：缓存按会话保存',
+  activityTracker.cache.sessions['session-a']?.days?.['2026-10-21']?.tokens === 2_000_000,
+  JSON.stringify(activityTracker.cache.sessions['session-a']),
+)
+activityTracker.noteEvent(
+  { header: { id: 'session-a' } },
+  {
+    type: 'assistant/message',
+    time: peakDate.getTime(),
+    data: {
+      message: { source: { provider: 'deepseek-account', model: 'deepseek-flash' } },
+      usage: { inputTokens: 100_000, totalTokens: 100_000 },
+    },
+  },
+)
+await activityTracker.persist({ immediate: true })
+const liveOut = activityWrites.at(-1)
+check(
+  'activity tracker：实时消息累加到当天',
+  liveOut?.value?.days?.at(-1)?.tokens === 2_600_000,
+  JSON.stringify(liveOut?.value?.days?.at(-1)),
+)
+activityTracker.dispose()
+
+// ─────────────────────────────────────────────────────────────
 // B. 原有进程级三态（会临时启动 / 收掉 DSHNotch.app）
 // ─────────────────────────────────────────────────────────────
 
@@ -1212,13 +1388,13 @@ if (SKIP_PROCESS) {
   rmSync(LOG, { force: true })
   check('前置：/Applications/DSHNotch.app 存在', existsSync(APP), APP)
 
-  apply(ctx, { appPath: APP, notify: false, sessionCost: false }, { platform: 'darwin' })
+  apply(ctx, { appPath: APP, notify: false, sessionCost: false, tokenActivity: false }, { platform: 'darwin' })
   await sleep(2500)
   check('未运行 → 启动', lastLog().includes('已随 DSH 启动'), lastLog())
   const afterLaunch = pgrep(['-x', 'DSHNotch'])
   check('进程真的起来了', afterLaunch.length === 1, `pid ${afterLaunch.join(',')}`)
 
-  apply(ctx, { appPath: APP, notify: false, sessionCost: false }, { platform: 'darwin' })
+  apply(ctx, { appPath: APP, notify: false, sessionCost: false, tokenActivity: false }, { platform: 'darwin' })
   await sleep(1500)
   check('已在运行 → 不重复启动', lastLog().includes('已在运行'), lastLog())
   check(
@@ -1227,7 +1403,7 @@ if (SKIP_PROCESS) {
     `实例数 ${pgrep(['-x', 'DSHNotch']).length}`,
   )
 
-  apply(ctx, { appPath: '/Applications/DefinitelyNotHere.app', notify: false, sessionCost: false }, { platform: 'darwin' })
+  apply(ctx, { appPath: '/Applications/DefinitelyNotHere.app', notify: false, sessionCost: false, tokenActivity: false }, { platform: 'darwin' })
   await sleep(800)
   check('路径不存在 → 安静跳过', lastLog().includes('跳过'), lastLog())
 }

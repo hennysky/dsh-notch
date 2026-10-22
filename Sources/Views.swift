@@ -38,12 +38,16 @@ enum CardChrome: Equatable {
 struct CardState: Equatable {
     var isExpanded = false
     var showSettings = false
+    var showCalendar = false
+    var calendarMetric: ActivityMetric = .tokens
     var settingsTab: SettingsTab = .alerts
     var alert: BalanceAlert?
 }
 
 struct CardActions {
     var toggleSettings: () -> Void = {}
+    var toggleCalendar: () -> Void = {}
+    var selectMetric: (ActivityMetric) -> Void = { _ in }
     var selectTab: (SettingsTab) -> Void = { _ in }
     var topUp: () -> Void = {}
     var quit: () -> Void = {}
@@ -226,6 +230,8 @@ struct BalanceCard: View {
             header
             if state.showSettings {
                 settingsBody
+            } else if state.showCalendar {
+                calendarBody
             } else if let issue = model.setupIssue {
                 setupBody(issue)
             } else {
@@ -257,21 +263,122 @@ struct BalanceCard: View {
             Circle()
                 .fill(state.alert?.color ?? model.level.color)
                 .frame(width: 6, height: 6)
-            Text(state.showSettings ? "设置" : "DeepSeek Harness")
+            Text(cardTitle)
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.85))
             Spacer(minLength: 0)
 
-            HeaderIconButton(systemName: state.showSettings ? "chevron.left" : "slider.horizontal.3",
-                             opacity: state.showSettings ? 0.95 : 0.65,
-                             action: actions.toggleSettings)
-
-            if !state.showSettings {
+            if state.showSettings {
+                HeaderIconButton(systemName: "chevron.left", opacity: 0.95,
+                                 action: actions.toggleSettings)
+            } else if state.showCalendar {
+                HeaderIconButton(systemName: "chevron.left", opacity: 0.95,
+                                 action: actions.toggleCalendar)
+            } else {
+                HeaderIconButton(systemName: "calendar", opacity: 0.65,
+                                 action: actions.toggleCalendar)
+                HeaderIconButton(systemName: "slider.horizontal.3", opacity: 0.65,
+                                 action: actions.toggleSettings)
                 HeaderIconButton(systemName: "arrow.clockwise",
                                  opacity: model.isRefreshing ? 0.3 : 0.65) {
                     Task { await model.refresh() }
                 }
                 .disabled(model.isRefreshing)
+            }
+        }
+    }
+
+    private var cardTitle: String {
+        if state.showSettings { return "设置" }
+        if state.showCalendar { return state.calendarMetric.title }
+        return "DeepSeek Harness"
+    }
+
+    // MARK: 用量日历
+
+    private var calendarBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                metricToggle
+                Spacer(minLength: 0)
+                Text("近 12 个月")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white.opacity(0.28))
+            }
+            .padding(.top, 8)
+
+            if let activity = model.activity, !activity.days.isEmpty {
+                CalendarHeatmapView(activity: activity, metric: state.calendarMetric)
+                    .padding(.top, 8)
+
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(activityTotalText(activity))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.92))
+                    Text(state.calendarMetric == .tokens ? "tokens · 近 12 个月" : "· 近 12 个月")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.30))
+                    Spacer(minLength: 4)
+                    activityLegend
+                }
+                .padding(.top, 10)
+
+                Text("悬停色块查看每天")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white.opacity(0.22))
+                    .padding(.top, 3)
+            } else {
+                Text("还没有用量数据")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.top, 14)
+                Text("跑一次对话后，插件会按天生成")
+                    .font(.system(size: 8.5))
+                    .foregroundStyle(.white.opacity(0.30))
+                    .padding(.top, 3)
+            }
+        }
+    }
+
+    private var metricToggle: some View {
+        HStack(spacing: 0) {
+            ForEach(ActivityMetric.allCases, id: \.self) { metric in
+                Button {
+                    actions.selectMetric(metric)
+                } label: {
+                    Text(metric.label)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(metric == state.calendarMetric
+                                         ? Color.black.opacity(0.85)
+                                         : Color.white.opacity(0.55))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(metric == state.calendarMetric
+                                                   ? Color.white.opacity(0.88)
+                                                   : Color.clear))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(Capsule().fill(Color.white.opacity(0.10)))
+    }
+
+    private func activityTotalText(_ activity: TokenActivity) -> String {
+        switch state.calendarMetric {
+        case .tokens:
+            return TokenActivityCalendar.compactCount(activity.days.reduce(0) { $0 + $1.tokens })
+        case .money:
+            return "≈¥" + SessionCostSnapshot.formatCny(activity.days.reduce(0) { $0 + $1.cost })
+        }
+    }
+
+    private var activityLegend: some View {
+        HStack(spacing: 2) {
+            ForEach(1...4, id: \.self) { level in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(TokenActivityCalendar.color(level: level, metric: state.calendarMetric))
+                    .frame(width: 5, height: 5)
             }
         }
     }
@@ -309,7 +416,7 @@ struct BalanceCard: View {
     private func sessionCostRow(_ session: SessionCostSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
-                Text("当前会话")
+                Text(session.source == "client" ? "当前会话" : "最近会话")
                     .font(.system(size: 9.5))
                     .foregroundStyle(.white.opacity(0.42))
                 Text(session.titleText)
@@ -595,6 +702,99 @@ struct BalanceCard: View {
             .background(Capsule().fill(Color.white.opacity(0.13)))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// 用量日历热力格：53 列 × 7 行。悬停时显示当天具体数值。
+private struct CalendarHeatmapView: View {
+    let activity: TokenActivity
+    let metric: ActivityMetric
+
+    @State private var hovered: HoveredCell?
+
+    private let cellSize: CGFloat = 4.4
+    private let gap: CGFloat = 0.6
+    private var pitch: CGFloat { cellSize + gap }
+    private var gridWidth: CGFloat { CGFloat(ActivityCalendar.weeks) * pitch - gap }
+    private var gridHeight: CGFloat { CGFloat(ActivityCalendar.daysPerWeek) * pitch - gap }
+
+    private struct HoveredCell: Equatable {
+        let column: Int
+        let row: Int
+        let cell: ActivityCell
+    }
+
+    var body: some View {
+        let calendar = TokenActivityCalendar.build(days: activity.days)
+        let maxValue = calendar.maxValue(for: metric)
+        ZStack(alignment: .topLeading) {
+            Canvas { context, _ in
+                for (column, rows) in calendar.columns.enumerated() {
+                    for (row, optionalCell) in rows.enumerated() {
+                        guard let cell = optionalCell else { continue }
+                        let rect = CGRect(x: CGFloat(column) * pitch,
+                                          y: CGFloat(row) * pitch,
+                                          width: cellSize, height: cellSize)
+                        let level = TokenActivityCalendar.level(for: cell.value(for: metric), maxValue: maxValue)
+                        context.fill(Path(roundedRect: rect, cornerRadius: 1.2),
+                                     with: .color(TokenActivityCalendar.color(level: level, metric: metric)))
+                    }
+                }
+                if let hovered {
+                    let rect = CGRect(x: CGFloat(hovered.column) * pitch,
+                                      y: CGFloat(hovered.row) * pitch,
+                                      width: cellSize, height: cellSize)
+                    context.stroke(Path(roundedRect: rect, cornerRadius: 1.2),
+                                   with: .color(.white.opacity(0.9)), lineWidth: 1)
+                }
+            }
+            .frame(width: gridWidth, height: gridHeight)
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let point):
+                    let column = Int(point.x / pitch)
+                    let row = Int(point.y / pitch)
+                    if column >= 0, column < ActivityCalendar.weeks,
+                       row >= 0, row < ActivityCalendar.daysPerWeek,
+                       let cell = calendar.columns[column][row] {
+                        hovered = HoveredCell(column: column, row: row, cell: cell)
+                    } else {
+                        hovered = nil
+                    }
+                case .ended:
+                    hovered = nil
+                }
+            }
+
+            ForEach(calendar.monthLabels) { label in
+                Text(label.label)
+                    .font(.system(size: 7.5))
+                    .foregroundStyle(.white.opacity(0.30))
+                    .offset(x: CGFloat(label.column) * pitch, y: gridHeight + 3)
+            }
+
+            if let hovered {
+                Text(TokenActivityCalendar.hoverText(for: hovered.cell, metric: metric))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .fixedSize()
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(Color.black.opacity(0.92))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
+                    )
+                    .offset(x: tooltipX(for: hovered), y: gridHeight + 14)
+            }
+        }
+        .frame(width: gridWidth, height: gridHeight + 34, alignment: .topLeading)
+    }
+
+    private func tooltipX(for hovered: HoveredCell) -> CGFloat {
+        let center = CGFloat(hovered.column) * pitch
+        return min(max(center - 48, 0), max(0, gridWidth - 132))
     }
 }
 

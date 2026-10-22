@@ -19,3 +19,9 @@
         # sessionCostPricing: {}
         # 额外节假日（YYYY-MM-DD 数组），并入内置 2026 表
         # sessionCostHolidays: []
+        # Token 用量日历：按天聚合所有会话的 token 与预估金额
+        tokenActivity: true
+        # 日历快照路径；留空 = ~/.dsh/notch/token-activity.json
+        # tokenActivityFile: ''
+        # 内部缓存路径；留空 = ~/.dsh/notch/token-activity-cache.json
+        # tokenActivityCacheFile: ''

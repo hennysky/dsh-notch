@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-notch-balance",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "Launches DSHNotch on macOS and bridges DSH session events to native notifications on macOS and Windows (Windows tray app → Electron toast + taskbar unread badge → PowerShell fallback).",
   "type": "module",
@@ -14,6 +14,7 @@
     "index.js",
     "client.js",
     "session-cost.js",
+    "activity.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",

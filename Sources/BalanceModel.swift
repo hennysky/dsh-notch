@@ -16,6 +16,8 @@ final class BalanceModel: ObservableObject {
     @Published private(set) var setupIssue: SetupIssue?
     /// 当前会话花费快照（由 DSH 插件写入，读本地 JSON；与余额刷新相互独立）。
     @Published private(set) var sessionCost: SessionCostSnapshot?
+    /// Token 用量日历（DSH 插件写出的每日快照）。
+    @Published private(set) var activity: TokenActivity?
 
     /// 轮询间隔：5 分钟。DSH 自身超时为 30s，不需要更频繁地打接口。
     let refreshInterval: TimeInterval = 300
@@ -56,8 +58,9 @@ final class BalanceModel: ObservableObject {
     /// 用户的预期是「点开就看到最新余额」，但无脑刷新会在反复点开时打爆接口
     /// （实测触发过 HTTP 429），所以配一个下限。
     func refreshIfStale() {
-        // 会话花费是本地文件读取，不受余额的 30 秒限流约束：每次点开都重读。
+        // 会话花费 / 用量日历都是本地文件读取，不受余额的 30 秒限流约束：每次点开都重读。
         reloadSessionCost()
+        reloadActivity()
         let now = Date()
         guard RefreshPolicy.shouldRefresh(lastAttemptAt: lastAttemptAt, now: now) else {
             let age = lastAttemptAt.map { Int(now.timeIntervalSince($0)) } ?? -1
@@ -66,6 +69,16 @@ final class BalanceModel: ObservableObject {
         }
         dshLog("点开触发刷新")
         Task { await refresh() }
+    }
+
+    /// 重新读取插件写出的 `~/.dsh/notch/token-activity.json`。
+    func reloadActivity() {
+        let next = TokenActivity.load()
+        if next != activity {
+            activity = next
+            let total = next?.days.reduce(0) { $0 + $1.tokens } ?? 0
+            dshLog("用量日历：\(next?.days.count ?? 0) 天 / \(total) tokens")
+        }
     }
 
     /// 重新读取插件写出的 `~/.dsh/notch/session-cost.json`。
@@ -80,6 +93,7 @@ final class BalanceModel: ObservableObject {
     func refresh() async {
         guard !isRefreshing else { return }
         reloadSessionCost()
+        reloadActivity()
         isRefreshing = true
         lastAttemptAt = Date()
         defer { isRefreshing = false }
@@ -176,6 +190,11 @@ final class BalanceModel: ObservableObject {
     /// 仅供 `--render` 离屏预览使用：注入会话花费快照。
     func injectSessionCost(_ snapshot: SessionCostSnapshot?) {
         sessionCost = snapshot
+    }
+
+    /// 仅供 `--render` 离屏预览使用：注入用量日历。
+    func injectActivity(_ activity: TokenActivity?) {
+        self.activity = activity
     }
 
     /// 仅供 `--render` 离屏预览使用：注入引导态。

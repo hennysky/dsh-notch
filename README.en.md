@@ -250,6 +250,14 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | No "已注册 3 个监听" in the log | the plugin is still the old version: restart DSH once |
 | `HTTP 200 … shown:false` in the log | the matching toggle is off in the card settings |
 
+### Token activity calendar
+
+A calendar button in the card header opens a 12-month heatmap of daily token usage, or of
+estimated cost (tokens are purple, money is green). Hover a cell to see that day's exact
+numbers. The plugin aggregates session logs per day (first backfill may take tens of seconds,
+then incremental); it only reads `~/.dsh/notch/token-activity.json` locally. Details:
+[docs/token-activity.md](docs/token-activity.md).
+
 ### Current session cost
 
 With the plugin installed (1.4.0+), the card gains a **current session** section: how many tokens the

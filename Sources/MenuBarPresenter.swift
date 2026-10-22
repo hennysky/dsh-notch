@@ -106,6 +106,8 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
                      chrome: .popover,
                      state: state,
                      actions: CardActions(toggleSettings: { [weak self] in self?.toggleSettings() },
+                                          toggleCalendar: { [weak self] in self?.toggleCalendar() },
+                                          selectMetric: { [weak self] metric in self?.selectMetric(metric) },
                                           selectTab: { [weak self] tab in self?.select(tab) },
                                           topUp: { [weak self] in self?.openTopUpPage() },
                                           quit: { NSApp.terminate(nil) }))
@@ -186,7 +188,21 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
 
     private func toggleSettings() {
         state.showSettings.toggle()
+        if state.showSettings { state.showCalendar = false }
         dshLog("设置页 \(state.showSettings ? "打开" : "关闭")（菜单栏）")
+        hosting?.rootView = makeRootView()
+    }
+
+    private func toggleCalendar() {
+        state.showCalendar.toggle()
+        if state.showCalendar { state.showSettings = false }
+        dshLog("用量日历 \(state.showCalendar ? "打开" : "关闭")（菜单栏）")
+        hosting?.rootView = makeRootView()
+    }
+
+    private func selectMetric(_ metric: ActivityMetric) {
+        state.calendarMetric = metric
+        dshLog("用量日历口径：\(metric.label)（菜单栏）")
         hosting?.rootView = makeRootView()
     }
 

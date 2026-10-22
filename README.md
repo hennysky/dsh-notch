@@ -237,6 +237,14 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | 日志里没有「已注册 3 个监听」 | 插件还是旧版：重启一次 DSH 加载新代码 |
 | 日志里 `HTTP 200 … shown:false` | 卡片设置里对应的开关被关了 |
 
+### Token 用量日历
+
+卡片标题栏的日历按钮可以切到「用量日历」：近 12 个月的每日 token 用量，或切成金额
+（token 紫色、金额绿色），鼠标悬停色块查看当天具体数值。
+
+- 数据由插件按天聚合会话日志，首次回填需要几十秒，之后增量更新
+- 只读本地 `~/.dsh/notch/token-activity.json`；口径见 [docs/token-activity.md](docs/token-activity.md)
+
 ### 当前会话花费
 
 装插件（1.4.0+）后，卡片会多一块「当前会话」：你正在看的那个 DSH 会话用了多少 token、

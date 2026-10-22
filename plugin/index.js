@@ -48,6 +48,12 @@ import {
   defaultSessionCostFile,
   writeSessionCostSnapshot,
 } from './session-cost.js'
+import {
+  TokenActivityTracker,
+  defaultActivityCacheFile,
+  defaultActivityFile,
+  scanSessionFiles,
+} from './activity.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -104,6 +110,12 @@ export const DEFAULTS = {
   sessionCostPricing: {},
   /** 额外节假日（YYYY-MM-DD 数组），并入内置 2026 表。 */
   sessionCostHolidays: [],
+  /** 是否记录 Token 用量日历（按天聚合 token / 预估金额）。 */
+  tokenActivity: true,
+  /** 日历快照路径；留空 = ~/.dsh/notch/token-activity.json。 */
+  tokenActivityFile: '',
+  /** 日历内部缓存路径；留空 = ~/.dsh/notch/token-activity-cache.json。 */
+  tokenActivityCacheFile: '',
   /**
    * Windows 托盘应用路径（DSHNotch.exe）。留空则自动探测
    * `%LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe`。
@@ -1319,6 +1331,76 @@ function registerSessionCost(ctx, settings) {
   log(`会话花费：已启用（快照 ${settings.sessionCostFile}）`)
 }
 
+/** 注册用量日历：实时累加 + 启动回填。 */
+function registerTokenActivity(ctx, settings) {
+  const tracker = new TokenActivityTracker(ctx, settings, { log })
+
+  ctx.effect(() => {
+    const detach = ctx.on(
+      'session/event',
+      (session, event) => {
+        try {
+          tracker.noteEvent(session, event)
+        } catch (error) {
+          log(`用量日历：处理 session/event 失败（${describeError(error)}）`)
+        }
+      },
+      { global: true },
+    )
+    return () => {
+      if (typeof detach === 'function') detach()
+      tracker.dispose()
+      void tracker.persist({ immediate: true })
+    }
+  }, 'notch-balance.tokenActivity')
+
+  // 回填在后台跑，不阻塞 DSH 启动；失败只记日志。
+  void tracker.backfill().catch((error) => {
+    log(`用量日历：回填失败（${describeError(error)}）`)
+  })
+
+  // 诊断端点：排查「插件是否拿到 sessionQuery / 扫到多少会话 / 回填了多少」。
+  // 只读本地状态，不返回会话内容。
+  const webServer = ctx.get?.('webServer')
+  if (webServer !== undefined && typeof webServer.register === 'function') {
+    ctx.effect(
+      () =>
+        webServer.register(
+          {
+            kind: 'exact',
+            path: '/api/notch/activity-status',
+            handler: async (req, res) => {
+              const send = (body) => {
+                res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+                res.end(JSON.stringify(body))
+              }
+              try {
+                const query = ctx.get?.('sessionQuery')
+                const files = await scanSessionFiles()
+                send({
+                  ok: true,
+                  hasSessionQuery: query !== undefined && typeof query.readSession === 'function',
+                  hasSessions: ctx.get?.('sessions') !== undefined,
+                  sessionFiles: files.size,
+                  cachedSessions: Object.keys(tracker.cache.sessions).length,
+                  backfilling: tracker.backfilling,
+                  cacheFile: settings.tokenActivityCacheFile,
+                  snapshotFile: settings.tokenActivityFile,
+                })
+              } catch (error) {
+                send({ ok: false, error: describeError(error) })
+              }
+            },
+          },
+          'notch-balance.activityStatus',
+        ),
+      'notch-balance.activityStatus',
+    )
+  }
+
+  log(`用量日历：已启用（快照 ${settings.tokenActivityFile}）`)
+}
+
 // ─────────────────────────────────────────────────────────────
 // 插件入口
 // ─────────────────────────────────────────────────────────────
@@ -1368,6 +1450,15 @@ export function resolveSettings(config, platform = process.platform) {
         : defaultSessionCostFile(),
     sessionCostPricing: isPlainObject(settings.sessionCostPricing) ? settings.sessionCostPricing : {},
     sessionCostHolidays: normalizeHolidays(settings.sessionCostHolidays),
+    tokenActivity: settings.tokenActivity !== false,
+    tokenActivityFile:
+      typeof settings.tokenActivityFile === 'string' && settings.tokenActivityFile !== ''
+        ? settings.tokenActivityFile
+        : defaultActivityFile(),
+    tokenActivityCacheFile:
+      typeof settings.tokenActivityCacheFile === 'string' && settings.tokenActivityCacheFile !== ''
+        ? settings.tokenActivityCacheFile
+        : defaultActivityCacheFile(),
   }
 }
 
@@ -1450,6 +1541,15 @@ export function apply(ctx, config = {}, runtime = {}) {
       registerSessionCost(ctx, settings)
     } catch (error) {
       log(`会话花费：初始化失败（${describeError(error)}），已跳过`)
+    }
+  }
+
+  // 用量日历：独立于通知/当前会话，按天聚合所有会话的 token 与预估金额。
+  if (settings.tokenActivity) {
+    try {
+      registerTokenActivity(ctx, settings)
+    } catch (error) {
+      log(`用量日历：初始化失败（${describeError(error)}），已跳过`)
     }
   }
 

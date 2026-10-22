@@ -104,6 +104,18 @@ NOTCH_SKIP_PROCESS_TESTS=1 node plugin/test.mjs
 测试里注入了假的 `electron` 和假的本地桥，所以三种后端的**选择顺序**与
 `send` / 未读 / 点击行为都能在 macOS 上验证；真实 toast 与托盘外观只能在 Windows 上肉眼确认。
 
+## Token 用量日历
+
+卡片里还有一个「用量日历」：近 12 个月的每日 token 用量或预估金额，53 周 × 7 天的
+色块，鼠标悬停查看具体数值；顶部可在「用量 / 金额」之间切换（token 紫色、金额绿色）。
+
+- 数据由插件回填 + 实时累加：启动时扫描 `~/.dsh/sessions`（只重算 mtime 变过的会话），
+  运行时监听 `session/event`；按北京时间切天
+- 首次回填可能跑几十秒（历史会话多时），缓存后重启很快
+- 产出 `~/.dsh/notch/token-activity.json`，内部缓存 `token-activity-cache.json`
+- 配置：`tokenActivity` / `tokenActivityFile` / `tokenActivityCacheFile`
+- 详细契约见 [docs/token-activity.md](../docs/token-activity.md)
+
 ## 当前会话花费（哪个窗口花了多少钱）
 
 除了通知，插件还会记录**你正在看的那个 DSH 会话**用了多少 token、按官方价目估算花了多少钱。

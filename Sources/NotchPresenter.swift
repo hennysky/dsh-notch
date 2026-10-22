@@ -194,6 +194,8 @@ final class NotchPresenter: BalancePresenting {
 
     private func makeActions() -> CardActions {
         CardActions(toggleSettings: { [weak self] in self?.toggleSettings() },
+                    toggleCalendar: { [weak self] in self?.toggleCalendar() },
+                    selectMetric: { [weak self] metric in self?.selectMetric(metric) },
                     selectTab: { [weak self] tab in self?.select(tab) },
                     topUp: { [weak self] in self?.openTopUpPage() },
                     quit: { NSApp.terminate(nil) })
@@ -256,6 +258,21 @@ final class NotchPresenter: BalancePresenting {
 
     private func select(_ tab: SettingsTab) {
         state.settingsTab = tab
+        refreshContent()
+    }
+
+    func toggleCalendar() {
+        cancelAlertAutoCollapse()
+        unread.clear()
+        state.showCalendar.toggle()
+        if state.showCalendar { state.showSettings = false }
+        dshLog("用量日历 \(state.showCalendar ? "打开" : "关闭")（刘海）")
+        refreshContent()
+    }
+
+    func selectMetric(_ metric: ActivityMetric) {
+        state.calendarMetric = metric
+        dshLog("用量日历口径：\(metric.label)（刘海）")
         refreshContent()
     }
 

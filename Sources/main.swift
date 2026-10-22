@@ -170,6 +170,15 @@ func runRenderCheck() -> Int32 {
     var state = CardState()
     state.isExpanded = true
     state.showSettings = CommandLine.arguments.contains("--render-settings")
+    let isCalendar = CommandLine.arguments.contains("--render-calendar")
+        || CommandLine.arguments.contains("--render-calendar-money")
+        || CommandLine.arguments.contains("--render-calendar-live")
+    state.showCalendar = isCalendar
+    state.calendarMetric = CommandLine.arguments.contains("--render-calendar-money") ? .money : .tokens
+    if isCalendar {
+        let live = CommandLine.arguments.contains("--render-calendar-live")
+        model.injectActivity((live ? TokenActivity.load() : nil) ?? sampleTokenActivity())
+    }
     state.settingsTab = SettingsTab(rawValue: tabArgument()) ?? .alerts
     state.alert = isAlert
         ? BalanceAlert(kind: .lowBalance(threshold: 10), symbol: "¥", current: 8.42, at: Date())
@@ -200,6 +209,10 @@ func runRenderCheck() -> Int32 {
     else if unknownToday { name = "dsh-notch-unknown.png" }
     else if isAlert { name = "dsh-notch-alert.png" }
     else if isSessionCost { name = "dsh-notch-session-cost.png" }
+    else if isCalendar && CommandLine.arguments.contains("--render-calendar-live") {
+        name = "dsh-notch-calendar-live-\(state.calendarMetric.rawValue).png"
+    }
+    else if isCalendar { name = "dsh-notch-calendar-\(state.calendarMetric.rawValue).png" }
     else if state.showSettings { name = "dsh-notch-settings-\(state.settingsTab.rawValue).png" }
     else if menuBarStyle { name = "dsh-notch-menubar.png" }
     else { name = "dsh-notch-expanded.png" }
@@ -1021,6 +1034,127 @@ func redPixelCount(_ image: NSImage?) -> Int {
     return count
 }
 
+// MARK: - 用量日历
+
+/// 离屏渲染/自检用的合成数据：前几个月密集、最近几个月更亮，接近截图里的分布。
+func sampleTokenActivity(now: Date = Date()) -> TokenActivity {
+    var days: [ActivityDay] = []
+    let calendar = TokenActivityCalendar.calendar
+    for offset in stride(from: 370, through: 0, by: -1) {
+        guard let date = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now)) else { continue }
+        let key = TokenActivityCalendar.dayFormatter.string(from: date)
+        let weekday = calendar.component(.weekday, from: date)
+        let month = calendar.component(.month, from: date)
+        var factor = 0.0
+        if weekday != 1, weekday != 7 {
+            if month >= 6 {
+                let wave = (sin(Double(offset) * 0.7) + 1) / 2
+                factor = 0.4 + wave * 0.6
+            } else if month == 5 {
+                factor = 0.12 + (Double(370 - offset) / 370) * 0.2
+            }
+        }
+        let tokens = Int(Double(180_000) * factor * (0.6 + Double((offset * 37) % 23) / 23 * 0.8))
+        days.append(ActivityDay(date: key, tokens: tokens, cost: Double(tokens) * 0.000011))
+    }
+    return TokenActivity(
+        schema: 1,
+        updatedAt: now.timeIntervalSince1970 * 1000,
+        days: days,
+    )
+}
+
+@MainActor
+func runCalendarCheck() -> Int32 {
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String = "") {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        if !detail.isEmpty { print("    \(detail)") }
+    }
+
+    let fixed = TokenActivityCalendar.dayFormatter.date(from: "2026-10-21")!
+    let sample = sampleTokenActivity(now: fixed)
+    let calendar = TokenActivityCalendar.build(days: sample.days, today: fixed)
+
+    check("日历：53 列", calendar.columns.count == ActivityCalendar.weeks, String(calendar.columns.count))
+    check(
+        "日历：每列 7 行",
+        calendar.columns.allSatisfy { $0.count == ActivityCalendar.daysPerWeek },
+        calendar.columns.map(\.count).description,
+    )
+    let lastColumn = calendar.columns[ActivityCalendar.weeks - 1]
+    check(
+        "日历：今天在最后一列（周三 = 第 3 行）",
+        lastColumn[2]?.date == "2026-10-21",
+        lastColumn[2]?.date ?? "nil",
+    )
+    check("日历：今天之后的格子为空", lastColumn[3] == nil && lastColumn[6] == nil)
+    check(
+        "日历：最早一列是周一开始",
+        calendar.columns[0][0].map { date in
+            TokenActivityCalendar.calendar.component(.weekday, from: TokenActivityCalendar.dayFormatter.date(from: date.date)!)
+        } == 2,
+    )
+    check(
+        "日历：月份标签数量合理",
+        (10...14).contains(calendar.monthLabels.count),
+        "\(calendar.monthLabels.count) 个",
+    )
+
+    let maxTokens = calendar.maxValue(for: .tokens)
+    let maxMoney = calendar.maxValue(for: .money)
+    check("日历：两种口径各有最大值", maxTokens > 0 && maxMoney > 0)
+    check(
+        "日历：档位 0/1/4",
+        TokenActivityCalendar.level(for: 0, maxValue: maxTokens) == 0 &&
+            TokenActivityCalendar.level(for: maxTokens * 0.01, maxValue: maxTokens) == 1 &&
+            TokenActivityCalendar.level(for: maxTokens, maxValue: maxTokens) == 4,
+    )
+    check(
+        "日历：token 与金额颜色不同",
+        TokenActivityCalendar.color(level: 4, metric: .tokens) != TokenActivityCalendar.color(level: 4, metric: .money),
+    )
+    check(
+        "日历：token 文案",
+        TokenActivityCalendar.compactCount(1_240_000) == "1.24M" &&
+            TokenActivityCalendar.compactCount(83_000) == "83.0k" &&
+            TokenActivityCalendar.compactCount(13_461_877_705) == "13.46B" &&
+            TokenActivityCalendar.compactCount(999) == "999",
+    )
+    check(
+        "日历：悬停文案",
+        TokenActivityCalendar.hoverText(
+            for: ActivityCell(date: "2026-10-21", tokens: 1_240_000, cost: 0.42),
+            metric: .tokens,
+        ) == "10月21日 · 1.24M tokens",
+        TokenActivityCalendar.hoverText(
+            for: ActivityCell(date: "2026-10-21", tokens: 1_240_000, cost: 0.42),
+            metric: .tokens,
+        ),
+    )
+    check(
+        "日历：金额悬停文案",
+        TokenActivityCalendar.hoverText(
+            for: ActivityCell(date: "2026-10-21", tokens: 1_240_000, cost: 0.42),
+            metric: .money,
+        ) == "10月21日 · ≈¥0.42",
+        TokenActivityCalendar.hoverText(
+            for: ActivityCell(date: "2026-10-21", tokens: 1_240_000, cost: 0.42),
+            metric: .money,
+        ),
+    )
+
+    let encoded = try! JSONEncoder().encode(sample)
+    check("日历：JSON 往返", TokenActivity.parse(encoded)?.days.count == sample.days.count)
+    check("日历：坏 JSON 不崩", TokenActivity.parse(Data("nope".utf8)) == nil)
+    check("日历：schema 不符不解析", TokenActivity.parse(Data(#"{"schema":2,"updatedAt":0,"days":[]}"#.utf8)) == nil)
+
+    print("")
+    print(failed == 0 ? "用量日历自检全部通过" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
 // MARK: - 当前会话花费自检
 
 @MainActor
@@ -1123,6 +1257,9 @@ if CommandLine.arguments.contains("--unreadcheck") {
 }
 if CommandLine.arguments.contains("--sessioncostcheck") {
     exit(MainActor.assumeIsolated { runSessionCostCheck() })
+}
+if CommandLine.arguments.contains("--calendarcheck") {
+    exit(MainActor.assumeIsolated { runCalendarCheck() })
 }
 
 // MARK: - 正常启动
