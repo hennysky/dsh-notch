@@ -67,3 +67,24 @@ jobs:
           name: DSHNotch-win-x64
           path: DSHNotch-win-x64.zip
           retention-days: 14
+
+      # 备用产物：不做 single-file 自解压，直接一个文件夹（exe + DLL）。
+      # 单文件版在部分机器上会被杀软/SmartScreen 当成自解压程序拦下，
+      # 这个版本用来排除「单文件自解压」这一类问题。
+      - name: Publish folder (no single file)
+        run: >
+          dotnet publish windows/src/DSHNotch/DSHNotch.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=false
+          -p:PublishTrimmed=false
+          -o publish-folder
+
+      - name: Zip folder artifact
+        run: Compress-Archive -Path publish-folder/* -DestinationPath DSHNotch-win-x64-folder.zip -Force
+
+      - name: Upload folder artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSHNotch-win-x64-folder
+          path: DSHNotch-win-x64-folder.zip
+          retention-days: 14
