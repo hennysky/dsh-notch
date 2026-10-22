@@ -6,7 +6,7 @@
 ; 开始菜单/桌面快捷方式 → 直接启动。用户不需要解压、不需要命令行。
 
 #define MyAppName "DSHNotch"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1"
 #define MyAppPublisher "DSHNotch"
 #define MyAppExeName "DSHNotch.exe"
 

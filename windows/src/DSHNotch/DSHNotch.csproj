@@ -9,9 +9,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>DSHNotch</RootNamespace>
     <AssemblyName>DSHNotch</AssemblyName>
-    <Version>1.2.0</Version>
-    <AssemblyVersion>1.2.0.0</AssemblyVersion>
-    <FileVersion>1.2.0.0</FileVersion>
+    <Version>1.2.1</Version>
+    <AssemblyVersion>1.2.1.0</AssemblyVersion>
+    <FileVersion>1.2.1.0</FileVersion>
     <!-- 允许在 macOS / Linux 上仅做交叉编译（CI 的编译步骤跑在 windows-latest，这里只是本地自检用） -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <!-- 用内置 COM interop 创建开始菜单快捷方式（IShellLinkW / IPropertyStore） -->

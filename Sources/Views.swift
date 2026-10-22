@@ -364,11 +364,13 @@ struct BalanceCard: View {
     }
 
     private func activityTotalText(_ activity: TokenActivity) -> String {
+        // 只合计当前展示的 6 个月；快照里还有更早的数据，不能一起加。
+        let cells = TokenActivityCalendar.build(days: activity.days).allCells
         switch state.calendarMetric {
         case .tokens:
-            return TokenActivityCalendar.compactCount(activity.days.reduce(0) { $0 + $1.tokens })
+            return TokenActivityCalendar.compactCount(cells.reduce(0) { $0 + $1.tokens })
         case .money:
-            return "≈¥" + SessionCostSnapshot.formatCny(activity.days.reduce(0) { $0 + $1.cost })
+            return "≈¥" + SessionCostSnapshot.formatCny(cells.reduce(0) { $0 + $1.cost })
         }
     }
 

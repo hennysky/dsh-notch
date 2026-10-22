@@ -12,7 +12,7 @@ public sealed class BalanceCardForm : Form
 {
     private const int CardWidth = 324;
     private const int BaseHeight = 214;
-    private const int CalendarHeight = 150;
+    private const int CalendarHeight = 196;
     private const int ErrorTop = 152;
 
     // 余额页
@@ -217,8 +217,8 @@ public sealed class BalanceCardForm : Form
         // ---- 日历页 ----
         _heatmap = new CalendarHeatmapControl
         {
-            Location = new Point(14, 34),
-            Size = new Size(296, 54),
+            Location = new Point(30, 38),
+            Size = new Size(264, 90),
             Visible = false,
         };
         _heatmap.HoverChanged += OnCalendarHover;
@@ -226,10 +226,10 @@ public sealed class BalanceCardForm : Form
         _calendarDetailLabel = new Label
         {
             Text = TokenActivityView.HoverHint,
-            Location = new Point(14, 92),
-            Size = new Size(296, 16),
+            Location = new Point(14, 132),
+            Size = new Size(296, 20),
             ForeColor = Color.FromArgb(135, 140, 148),
-            Font = new Font("Segoe UI", 8.5f),
+            Font = new Font("Segoe UI", 10.5f),
             AutoEllipsis = true,
             Visible = false,
         };
@@ -237,10 +237,10 @@ public sealed class BalanceCardForm : Form
         _calendarTotalLabel = new Label
         {
             Text = string.Empty,
-            Location = new Point(14, 112),
-            Size = new Size(296, 22),
+            Location = new Point(14, 158),
+            Size = new Size(296, 32),
             ForeColor = Color.FromArgb(232, 232, 236),
-            Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 18f, FontStyle.Bold),
             AutoEllipsis = true,
             Visible = false,
         };
@@ -248,7 +248,7 @@ public sealed class BalanceCardForm : Form
         _calendarEmptyLabel = new Label
         {
             Text = TokenActivityView.EmptyPlaceholder,
-            Location = new Point(14, 62),
+            Location = new Point(14, 74),
             Size = new Size(296, 20),
             ForeColor = Color.FromArgb(180, 182, 188),
             Font = new Font("Segoe UI", 10f, FontStyle.Bold),
@@ -259,7 +259,7 @@ public sealed class BalanceCardForm : Form
         _calendarEmptyHintLabel = new Label
         {
             Text = TokenActivityView.EmptyHint,
-            Location = new Point(14, 86),
+            Location = new Point(14, 102),
             Size = new Size(296, 16),
             ForeColor = Color.FromArgb(120, 124, 132),
             Font = new Font("Segoe UI", 8.5f),
@@ -456,7 +456,7 @@ public sealed class BalanceCardForm : Form
         if (!showCalendarBody) return;
 
         _heatmap.SetData(view.Calendar, _metric);
-        _calendarTotalLabel.Text = "近 12 个月合计  " + view.TotalText;
+        _calendarTotalLabel.Text = "近 6 个月合计  " + view.TotalText;
         _calendarDetailLabel.Text = TokenActivityView.HoverHint;
         _calendarDetailLabel.ForeColor = Color.FromArgb(135, 140, 148);
     }

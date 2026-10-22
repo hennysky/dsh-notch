@@ -5,20 +5,20 @@ using System.Windows.Forms;
 namespace DSHNotch;
 
 /// <summary>
-/// 用量日历热力图：自绘 53 列 × 7 行色块（不创建几千个 Label）。
+/// 用量日历热力图：自绘 27 列 × 7 行色块（近 6 个月；不创建几百个 Label）。
 /// 悬停时白框高亮，并通过 <see cref="HoverChanged"/> 让卡片更新固定详情行。
 /// </summary>
 public sealed class CalendarHeatmapControl : Control
 {
-    private const float CellSize = 4.4f;
+    private const float CellSize = 8.4f;
     private const float Gap = 1.0f;
     private const float Pitch = CellSize + Gap;
-    private const int MonthLabelHeight = 14;
+    private const int MonthLabelHeight = 20;
 
     private static readonly float GridWidth = ActivityCalendar.Weeks * Pitch - Gap;
     private static readonly float GridHeight = ActivityCalendar.DaysPerWeek * Pitch - Gap;
 
-    private readonly Font _monthFont = new("Segoe UI", 7f);
+    private readonly Font _monthFont = new("Segoe UI", 9f);
     private readonly SolidBrush _monthBrush = new(Color.FromArgb(135, 122, 128, 138));
     private readonly Pen _hoverPen = new(Color.FromArgb(230, 255, 255, 255), 1f);
     private readonly SolidBrush _cellBrush = new(Color.Black);
