@@ -237,8 +237,12 @@ struct BalanceCard: View {
             } else {
                 balanceBody
             }
-            Spacer(minLength: 6)
-            footer
+            if state.showCalendar {
+                Spacer(minLength: 0)
+            } else {
+                Spacer(minLength: 6)
+                footer
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, chrome.topInset + 10)
@@ -301,9 +305,9 @@ struct BalanceCard: View {
             HStack(spacing: 6) {
                 metricToggle
                 Spacer(minLength: 0)
-                Text("近 12 个月")
-                    .font(.system(size: 8))
-                    .foregroundStyle(.white.opacity(0.28))
+                Text("近 6 个月")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.white.opacity(0.35))
             }
             .padding(.top, 8)
 
@@ -313,20 +317,15 @@ struct BalanceCard: View {
 
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(activityTotalText(activity))
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.92))
-                    Text(state.calendarMetric == .tokens ? "tokens · 近 12 个月" : "· 近 12 个月")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.white.opacity(0.30))
+                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.95))
+                    Text(state.calendarMetric == .tokens ? "tokens · 近 6 个月" : "· 近 6 个月")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.white.opacity(0.35))
                     Spacer(minLength: 4)
                     activityLegend
                 }
                 .padding(.top, 10)
-
-                Text("悬停色块查看每天")
-                    .font(.system(size: 8))
-                    .foregroundStyle(.white.opacity(0.22))
-                    .padding(.top, 3)
             } else {
                 Text("还没有用量数据")
                     .font(.system(size: 10.5))
@@ -347,12 +346,12 @@ struct BalanceCard: View {
                     actions.selectMetric(metric)
                 } label: {
                     Text(metric.label)
-                        .font(.system(size: 9.5, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(metric == state.calendarMetric
                                          ? Color.black.opacity(0.85)
                                          : Color.white.opacity(0.55))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 4)
                         .background(Capsule().fill(metric == state.calendarMetric
                                                    ? Color.white.opacity(0.88)
                                                    : Color.clear))
@@ -376,9 +375,9 @@ struct BalanceCard: View {
     private var activityLegend: some View {
         HStack(spacing: 2) {
             ForEach(1...4, id: \.self) { level in
-                RoundedRectangle(cornerRadius: 1)
+                RoundedRectangle(cornerRadius: 1.5)
                     .fill(TokenActivityCalendar.color(level: level, metric: state.calendarMetric))
-                    .frame(width: 5, height: 5)
+                    .frame(width: 7, height: 7)
             }
         }
     }
@@ -712,8 +711,8 @@ private struct CalendarHeatmapView: View {
 
     @State private var hovered: HoveredCell?
 
-    private let cellSize: CGFloat = 4.4
-    private let gap: CGFloat = 0.6
+    private let cellSize: CGFloat = 8.4
+    private let gap: CGFloat = 1.4
     private var pitch: CGFloat { cellSize + gap }
     private var gridWidth: CGFloat { CGFloat(ActivityCalendar.weeks) * pitch - gap }
     private var gridHeight: CGFloat { CGFloat(ActivityCalendar.daysPerWeek) * pitch - gap }
@@ -769,32 +768,22 @@ private struct CalendarHeatmapView: View {
 
             ForEach(calendar.monthLabels) { label in
                 Text(label.label)
-                    .font(.system(size: 7.5))
-                    .foregroundStyle(.white.opacity(0.30))
-                    .offset(x: CGFloat(label.column) * pitch, y: gridHeight + 3)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.38))
+                    .offset(x: CGFloat(label.column) * pitch, y: gridHeight + 4)
             }
 
-            if let hovered {
-                Text(TokenActivityCalendar.hoverText(for: hovered.cell, metric: metric))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.95))
-                    .fixedSize()
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(Color.black.opacity(0.92))
-                            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
-                    )
-                    .offset(x: tooltipX(for: hovered), y: gridHeight + 14)
-            }
+            // 悬停详情放在色块下方固定一行：卡片太小，浮层气泡会盖住数字。
+            Text(hovered.map { TokenActivityCalendar.hoverText(for: $0.cell, metric: metric) }
+                 ?? "悬停色块查看每天")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(hovered == nil ? 0.30 : 0.92))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: gridWidth, alignment: .leading)
+                .offset(y: gridHeight + 22)
         }
-        .frame(width: gridWidth, height: gridHeight + 34, alignment: .topLeading)
-    }
-
-    private func tooltipX(for hovered: HoveredCell) -> CGFloat {
-        let center = CGFloat(hovered.column) * pitch
-        return min(max(center - 48, 0), max(0, gridWidth - 132))
+        .frame(width: gridWidth, height: gridHeight + 38, alignment: .topLeading)
     }
 }
 

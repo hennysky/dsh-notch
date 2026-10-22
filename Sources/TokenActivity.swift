@@ -82,9 +82,12 @@ struct MonthLabel: Equatable, Identifiable {
     var id: Int { column }
 }
 
-/// 日历网格（53 列 × 7 行，周一开头，最后一列包含今天）。
+/// 日历网格（27 列 × 7 行，周一开头，最后一列包含今天）。
+///
+/// 卡片只有 300×256，53 周的格子会缩到 4pt、字也挤成一团；这里只展示最近
+/// 6 个月（27 周），每格可以放到 ~8.4pt，数字和月份标签才看得清。
 struct ActivityCalendar: Equatable {
-    static let weeks = 53
+    static let weeks = 27
     static let daysPerWeek = 7
 
     /// columns[col][row]

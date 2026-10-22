@@ -239,7 +239,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 
 ### Token 用量日历
 
-卡片标题栏的日历按钮可以切到「用量日历」：近 12 个月的每日 token 用量，或切成金额
+卡片标题栏的日历按钮可以切到「用量日历」：近 6 个月的每日 token 用量，或切成金额
 （token 紫色、金额绿色），鼠标悬停色块查看当天具体数值。
 
 ![Token 用量日历](preview/calendar-tokens.png)

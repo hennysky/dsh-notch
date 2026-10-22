@@ -1098,7 +1098,7 @@ func runCalendarCheck() -> Int32 {
     )
     check(
         "日历：月份标签数量合理",
-        (10...14).contains(calendar.monthLabels.count),
+        (5...7).contains(calendar.monthLabels.count),
         "\(calendar.monthLabels.count) 个",
     )
 
