@@ -60,6 +60,7 @@ CI：`.github/workflows/windows-app.yml`，push/PR 到 `windows-app`、`main` �
 | 卡片里的两个开关 | 「任务完成通知」「需要处理通知」，改动立即写入 `settings.json` |
 
 余额卡片显示：主钱包余额、赠送余额、今日消耗（本地推算）、累计消费、更新时间；
+有当前会话快照时再显示一块「当前会话」（标题+模型、输入/缓存/输出 token、`≈¥0.42（预估）`）。
 查询失败时**保留旧值**，只额外显示一行红色错误小字——绝不把失败合成 `¥0.00`。
 
 ### 余额来源
@@ -81,6 +82,41 @@ HTTP 401 提示重新登录，429 提示稍后重试，其余错误原样展示�
 - 今日消耗 = 当前累计消费 − 当日基线，状态存在
   `%APPDATA%\DSHNotch\daily-cost.json`；跨天且昨天有读数时基线可信，
   否则只显示 `≥¥X` 或「统计中」。
+
+---
+
+## 当前会话花费（v1.1.0+）
+
+卡片下方的「当前会话」区块显示你正在看的这个 DSH 会话用了多少 token、按官方价目
+**估算**花了多少钱。数据由 DSH 插件写入本地文件，本应用**只读、不发网络请求**：
+
+```
+%USERPROFILE%\.dsh\notch\session-cost.json
+```
+
+数据契约（schema 1、计价规则、插件侧怎么写）见仓库 `docs/session-cost.md`。
+
+显示内容：
+
+- 会话标题（过长截断）+ 模型；
+- `输入 1,240,000 · 缓存 980,000 · 输出 83,000`（千分位）；
+- `≈¥0.42（预估）`。
+
+读取与刷新：
+
+- 打开卡片时读一次；卡片显示期间每 30 秒重读一次（只读文件，无网络）；
+- 文件不存在、JSON 损坏、schema 不认识、`updatedAt` 缺失或超过 **24 小时**未更新：
+  整个区块隐藏，不报错；
+- 未收录模型（插件的 `cost.priced = false`，或 JSON 里没有 `cost.cny`）：
+  仍显示 token，只是不显示金额——宁可不显示，也不报错价；
+- 金额是**预估**：token 来自会话日志，单价是官方公开价目（高峰/空闲不同），
+  最终以平台账单为准。
+
+想验证本机文件长什么样：
+
+```powershell
+Get-Content "$env:USERPROFILE\.dsh\notch\session-cost.json"
+```
 
 ---
 
@@ -137,7 +173,7 @@ HTTP 401 提示重新登录，429 提示稍后重试，其余错误原样展示�
 
 ```bash
 curl -s 127.0.0.1:47810/health
-# {"ok":true,"app":"DSHNotch","version":"1.0.0","authorization":"authorized","unread":0}
+# {"ok":true,"app":"DSHNotch","version":"1.1.0","authorization":"authorized","unread":0}
 
 curl -s -X POST 127.0.0.1:47810/notify \
   -H 'content-type: application/json' \
@@ -211,11 +247,16 @@ curl -s -X POST 127.0.0.1:47810/notify \
 - [ ] 真实 DSH 安装路径定位（CI 机器没有 DSH），以及点击通知后 DSH 窗口是否被激活到前台；
 - [ ] 单实例 Mutex 在快速双击/开机启动竞争下的行为；
 - [ ] 与 Microsoft Defender/企业策略、专注助手（Focus Assist）的交互；
-- [ ] 真实平台接口的余额响应（需要用户本机登录凭据；CI 不访问外网接口）。
+- [ ] 真实平台接口的余额响应（需要用户本机登录凭据；CI 不访问外网接口）；
+- [ ] 「当前会话」块在真实 DSH 会话语料上的显示效果与卡片高度（CI 只覆盖
+      session-cost.json 的解析/校验/格式化与纯逻辑可见性，没有真实插件文件）；
+- [ ] 插件写入过程中读文件（原子 rename 的瞬间）是否会出现一次「区块闪烁/暂时隐藏」；
+- [ ] 极小金额（< ¥0.01）与超长会话标题在真实卡片里的观感。
 
 CI 实际验证的是：两个工程在 `windows-latest` 上编译通过；xUnit 全部通过
 （凭据解析、今日消耗、提醒规则、桥协议随机端口、toast XML 转义、设置读写、未读计数、
-托盘图标红色像素）；AUMID 快捷方式与 HKCU 协议/自启注册表读写；Release 单文件
+托盘图标红色像素、session-cost 解析/过期/缺字段/未收录模型/格式化/卡片可见性）；
+AUMID 快捷方式与 HKCU 协议/自启注册表读写；Release 单文件
 self-contained 发布并打包成 artifact。
 
 ---
@@ -228,8 +269,9 @@ windows/
   src/DSHNotch/
     Program.cs                 入口、单实例、--open-dsh、异常兜底
     TrayApp.cs                 NotifyIcon/菜单/轮询/桥/未读红点
-    BalanceCardForm.cs         余额卡片
+    BalanceCardForm.cs         余额卡片（含「当前会话」区块）
     BalanceModel.cs            余额状态机（失败保留旧快照）
+    SessionCost.cs             当前会话花费快照读取/校验/格式化（只读本地 JSON）
     BalanceClient.cs           凭据 + HTTP + 响应解析
     Credentials.cs             .credentials.yaml 行级解析
     DailyCost.cs               今日消耗推算与落盘

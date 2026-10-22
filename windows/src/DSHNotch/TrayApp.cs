@@ -23,6 +23,7 @@ public sealed class TrayApp : ApplicationContext
     private readonly NotificationBridgeRouter _router;
     private readonly BridgeServer _bridge;
     private readonly System.Threading.Timer _pollTimer;
+    private readonly System.Threading.Timer _sessionCostTimer;
     private readonly ToolStripMenuItem _startupItem;
     private readonly Icon _normalIcon;
     private readonly Icon _unreadIcon;
@@ -98,6 +99,16 @@ public sealed class TrayApp : ApplicationContext
             dueTime: TimeSpan.FromSeconds(1),
             period: TimeSpan.FromSeconds(BalanceModel.RefreshIntervalSeconds));
 
+        // 当前会话花费只读本地 JSON（无网络）：卡片显示期间每 30 秒重读一次。
+        _sessionCostTimer = new System.Threading.Timer(
+            _ => Post(() =>
+            {
+                if (_card.Visible) RefreshSessionCost();
+            }),
+            state: null,
+            dueTime: TimeSpan.FromSeconds(30),
+            period: TimeSpan.FromSeconds(30));
+
         AppLog.Write(_bridge.IsListening
             ? $"托盘已启动（桥端口 {_bridge.Port}）"
             : "托盘已启动（通知桥未启动，余额功能不受影响）");
@@ -139,6 +150,8 @@ public sealed class TrayApp : ApplicationContext
             RefreshPresentation();
             _card.ApplySnapshot(_model);
             _card.ApplySettings(_settings.Current);
+            // 先读出「当前会话」区块，让卡片按最终高度显示，避免显示后再变高跳动。
+            RefreshSessionCost();
             _card.PositionNearTray();
             _card.Show();
             _card.BringToFront();
@@ -162,6 +175,24 @@ public sealed class TrayApp : ApplicationContext
         catch (Exception ex)
         {
             AppLog.Error("触发刷新失败", ex);
+        }
+    }
+
+    /// <summary>
+    /// 读当前会话花费快照并刷新卡片区块。只读本地文件，不发网络请求；
+    /// 文件缺失/过期/损坏时 ApplySessionCost(Hidden)，卡片整块隐藏。
+    /// </summary>
+    private void RefreshSessionCost()
+    {
+        try
+        {
+            var snapshot = SessionCost.Load();
+            _card.ApplySessionCost(SessionCostCardModel.From(snapshot));
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("刷新当前会话花费失败", ex);
+            _card.ApplySessionCost(SessionCostCardModel.Hidden);
         }
     }
 
@@ -327,6 +358,7 @@ public sealed class TrayApp : ApplicationContext
         {
             _disposed = true;
             TryDispose(() => _pollTimer?.Dispose());
+            TryDispose(() => _sessionCostTimer?.Dispose());
             TryDispose(() => _bridge?.Dispose());
             TryDispose(() => _tray.Dispose());
             TryDispose(() => _card.Dispose());

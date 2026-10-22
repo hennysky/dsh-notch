@@ -19,6 +19,13 @@ public static class AppPaths
 
     public static string DailyCostFile => Path.Combine(DataDirectory, "daily-cost.json");
 
+    /// <summary>
+    /// 当前会话花费快照（schema 见 docs/session-cost.md）。由 DSH 插件原子写入，
+    /// 本应用只读；路径固定在 DSH home 下，两个平台读同一份。
+    /// </summary>
+    public static string SessionCostFile =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "notch", "session-cost.json");
+
     /// <summary>后台线程异常与运行日志：%TEMP%\dsh-notch-windows.log（任务要求写死在这里）。</summary>
     public static string LogFile => Path.Combine(Path.GetTempPath(), "dsh-notch-windows.log");
 
