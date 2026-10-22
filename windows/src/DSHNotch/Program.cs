@@ -69,7 +69,7 @@ internal static class Program
             // 快捷方式/协议注册失败（精简系统、组策略、杀软拦截）不能阻止托盘出现。
             SafeRun("设置进程 AUMID", ShortcutCreator.EnsureProcessAumid);
             SafeRun("创建开始菜单快捷方式", () => ShortcutCreator.EnsureShortcut());
-            SafeRun("注册 dshnotch:// 协议", ProtocolRegistration.EnsureRegistered);
+            SafeRun("注册 dshnotch:// 协议", () => ProtocolRegistration.EnsureRegistered());
 
             var store = new SettingsStore();
             if (store.Current.LaunchAtLogin) SafeRun("同步开机自启", () => StartupRegistration.SetEnabled(true));
