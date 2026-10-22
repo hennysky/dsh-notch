@@ -26,6 +26,13 @@ public static class AppPaths
     public static string SessionCostFile =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "notch", "session-cost.json");
 
+    /// <summary>
+    /// 每日用量快照（schema 见 docs/token-activity.md）。由 DSH 插件按天聚合后原子写入，
+    /// 本应用只读；文件出现前日历页显示占位。
+    /// </summary>
+    public static string TokenActivityFile =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "notch", "token-activity.json");
+
     /// <summary>后台线程异常与运行日志：%TEMP%\dsh-notch-windows.log（任务要求写死在这里）。</summary>
     public static string LogFile => Path.Combine(Path.GetTempPath(), "dsh-notch-windows.log");
 

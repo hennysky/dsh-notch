@@ -24,6 +24,7 @@ public sealed class TrayApp : ApplicationContext
     private readonly BridgeServer _bridge;
     private readonly System.Threading.Timer _pollTimer;
     private readonly System.Threading.Timer _sessionCostTimer;
+    private readonly System.Threading.Timer _activityTimer;
     private readonly ToolStripMenuItem _startupItem;
     private readonly Icon _normalIcon;
     private readonly Icon _unreadIcon;
@@ -109,6 +110,16 @@ public sealed class TrayApp : ApplicationContext
             dueTime: TimeSpan.FromSeconds(30),
             period: TimeSpan.FromSeconds(30));
 
+        // 用量日历同样只读本地 JSON：卡片显示期间每 30 秒重读一次。
+        _activityTimer = new System.Threading.Timer(
+            _ => Post(() =>
+            {
+                if (_card.Visible) RefreshActivity();
+            }),
+            state: null,
+            dueTime: TimeSpan.FromSeconds(30),
+            period: TimeSpan.FromSeconds(30));
+
         AppLog.Write(_bridge.IsListening
             ? $"托盘已启动（桥端口 {_bridge.Port}）"
             : "托盘已启动（通知桥未启动，余额功能不受影响）");
@@ -152,6 +163,7 @@ public sealed class TrayApp : ApplicationContext
             _card.ApplySettings(_settings.Current);
             // 先读出「当前会话」区块，让卡片按最终高度显示，避免显示后再变高跳动。
             RefreshSessionCost();
+            RefreshActivity();
             _card.PositionNearTray();
             _card.Show();
             _card.BringToFront();
@@ -193,6 +205,23 @@ public sealed class TrayApp : ApplicationContext
         {
             AppLog.Error("刷新当前会话花费失败", ex);
             _card.ApplySessionCost(SessionCostCardModel.Hidden);
+        }
+    }
+
+    /// <summary>
+    /// 读用量日历快照并刷新日历页。只读本地文件、无网络；文件缺失/损坏时卡片
+    /// 显示「还没有用量数据」占位，不报错。
+    /// </summary>
+    private void RefreshActivity()
+    {
+        try
+        {
+            _card.ApplyTokenActivity(TokenActivity.Load());
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("刷新用量日历失败", ex);
+            _card.ApplyTokenActivity(null);
         }
     }
 
@@ -359,6 +388,7 @@ public sealed class TrayApp : ApplicationContext
             _disposed = true;
             TryDispose(() => _pollTimer?.Dispose());
             TryDispose(() => _sessionCostTimer?.Dispose());
+            TryDispose(() => _activityTimer?.Dispose());
             TryDispose(() => _bridge?.Dispose());
             TryDispose(() => _tray.Dispose());
             TryDispose(() => _card.Dispose());
