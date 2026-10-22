@@ -9,28 +9,31 @@ DSH 的 Windows 托盘伴侣应用（C# / .NET 8 WinForms）。与 macOS 的 `DS
 
 ---
 
-## 安装
+## 安装（推荐：安装包）
 
-发布产物是单个自包含 exe，不需要装 .NET：
+下载 **`DSHNotch-Setup-1.0.1.exe`**，双击 → 下一步 → 安装。不需要解压、不需要命令行、不需要管理员：
 
-1. 从 GitHub Actions 下载 `DSHNotch-win-x64.zip`（后续 Release 会带 `DSHNotch-Windows-*.zip`），
-   解压到 `%LOCALAPPDATA%\Programs\DSHNotch\`（插件默认就在这个位置找 `DSHNotch.exe`）。
-2. 双击 `DSHNotch.exe`。首次运行会：
-   - 在开始菜单创建 `DSHNotch.lnk`，并写入 `System.AppUserModel.ID = DSHNotch.Desktop`
-     （非打包桌面应用发 Windows toast 的前提）；
-   - 在 `HKCU\Software\Classes\dshnotch` 注册 `dshnotch://open-dsh` 协议；
-   - 启动托盘图标，并开始每 300 秒查询一次余额。
-3. 如果系统弹了 Windows 通知权限/专注助手相关的限制，按需在
-   **设置 → 系统 → 通知** 里允许 `DSHNotch`。
+- 装到 `%LOCALAPPDATA%\Programs\DSHNotch`（插件默认就在这个位置找 `DSHNotch.exe`）
+- 可选：桌面快捷方式、开机自启
+- 装完自动启动；首次启动会在开始菜单写入带 AUMID 的快捷方式（Windows toast 的前提），
+  并注册 `dshnotch://open-dsh` 协议，然后显示托盘图标、每 300 秒查询一次余额
 
-> **未签名的 exe 可能被拦下**：首次运行如果出现「Windows 已保护你的电脑」，
-> 点「更多信息 → 仍要运行」；zip 从浏览器下载的，先右键 zip → 属性 → 勾选「解除锁定」再解压。
->
-> **双击没反应怎么办**：
-> 1. 先看任务栏右下角的「^」——托盘图标很可能收在里面（首次启动会弹一次气泡提示）；
-> 2. 用 `DSHNotch.exe --diagnose` 启动：会弹窗显示版本、系统、路径与日志位置，并打开日志目录；
-> 3. 日志在 `%TEMP%\dsh-notch-windows.log`，把它发出来即可定位。
-> 程序是 WinExe（没有控制台窗口），启动失败会弹一个错误框并把堆栈写进日志。
+> **未签名 exe 的提示**：如果出现「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」。
+> 这是没有代码签名证书导致的（不是病毒）；安装包与便携版都是同一次 CI 构建的产物。
+
+### 便携版（不想安装）
+
+`DSHNotch-1.0.1-便携版.exe` 是单个自包含 exe，双击即用，不需要解压/安装；
+代价是不会自动创建开始菜单/桌面快捷方式（其余功能相同）。
+
+### 双击没反应怎么办
+
+程序是 WinExe（没有控制台窗口），托盘图标可能收在任务栏「^」里：
+
+1. 先看任务栏右下角「^」——首次启动会弹一次气泡提示；
+2. 仍没有：用 `DSHNotch.exe --diagnose` 启动（会弹窗显示版本、系统、路径与日志位置）；
+3. 日志在 `%TEMP%\dsh-notch-windows.log`，发出来即可定位；
+4. 启动失败会弹错误框，不会静默退出。
 
 从源码构建/测试（需要 .NET 8 SDK，在 Windows 上）：
 
