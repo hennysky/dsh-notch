@@ -11,7 +11,7 @@ DSH 的 Windows 托盘伴侣应用（C# / .NET 8 WinForms）。与 macOS 的 `DS
 
 ## 安装（推荐：安装包）
 
-下载 **`DSHNotch-Setup-1.0.1.exe`**，双击 → 下一步 → 安装。不需要解压、不需要命令行、不需要管理员：
+下载 **[DSHNotch-Setup-1.0.1.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.5/DSHNotch-Setup-1.0.1.exe)**，双击 → 下一步 → 安装。不需要解压、不需要命令行、不需要管理员：
 
 - 装到 `%LOCALAPPDATA%\Programs\DSHNotch`（插件默认就在这个位置找 `DSHNotch.exe`）
 - 可选：桌面快捷方式、开机自启
@@ -23,7 +23,7 @@ DSH 的 Windows 托盘伴侣应用（C# / .NET 8 WinForms）。与 macOS 的 `DS
 
 ### 便携版（不想安装）
 
-`DSHNotch-1.0.1-便携版.exe` 是单个自包含 exe，双击即用，不需要解压/安装；
+[DSHNotch-1.0.1-portable.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.5/DSHNotch-1.0.1-portable.exe) 是单个自包含 exe，双击即用，不需要解压/安装；
 代价是不会自动创建开始菜单/桌面快捷方式（其余功能相同）。
 
 ### 双击没反应怎么办

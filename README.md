@@ -66,7 +66,7 @@ DSHNotch 解决这两件事：把余额搬到刘海／菜单栏，并在额度�
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.4/DSHNotch-1.4.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.5/DSHNotch-1.4.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -270,7 +270,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 2. **通知桥**（v1.1.0+）：把 DSH 的任务结束 / 审批 / 提问事件 POST 给 DSHNotch，
    变成 macOS 系统通知（见上面「DSH 通知」）。
 
-> **Windows 有独立的托盘伴侣**：下载 `DSHNotch-Setup-*.exe` 双击安装即可（装到
+> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.0.1.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.5/DSHNotch-Setup-1.0.1.exe) 双击安装即可（装到
 > `%LOCALAPPDATA%\Programs\DSHNotch`，不需要解压或命令行）；插件（v1.3.0+）会自动探测并拉起它。
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
 > 源码在 [`windows/`](windows/)，见 [plugin/README.md](plugin/README.md)。

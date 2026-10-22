@@ -69,7 +69,7 @@ The packages on both platforms are byte-for-byte identical. Either one works.
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.4/DSHNotch-1.4.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.5/DSHNotch-1.4.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -284,7 +284,7 @@ instead of launching it by hand.
 2. **Notification bridge** (v1.1.0+): it POSTs DSH's turn-finished / approval / question events
    to DSHNotch, which turns them into macOS notifications (see "DSH notifications" above).
 
-> **Windows has its own tray companion**: download and run `DSHNotch-Setup-*.exe` — it installs
+> **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.0.1.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.5/DSHNotch-Setup-1.0.1.exe) — it installs
 > into `%LOCALAPPDATA%\Programs\DSHNotch` with a Start Menu shortcut (no unzip, no command line);
 > the plugin (v1.3.0+) detects and launches it. Without the tray app it falls back to DeepSeek
 > Harness's own Electron notifications, then to a PowerShell toast. Source lives in
