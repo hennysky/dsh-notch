@@ -688,13 +688,20 @@ private struct CalendarPageView: View {
                     Text("近 3 个月合计")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.30))
-                    HStack(alignment: .firstTextBaseline, spacing: 7) {
-                        Text(totalText(activity))
+                    let parts = totalParts(activity)
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(parts.value)
                             .font(.system(size: 30, weight: .semibold, design: .rounded))
                             .foregroundStyle(.white.opacity(0.96))
+                        if !parts.unit.isEmpty {
+                            Text(parts.unit)
+                                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
                         Text(metric == .tokens ? "tokens" : "预估金额")
                             .font(.system(size: 10.5))
                             .foregroundStyle(.white.opacity(0.32))
+                            .padding(.leading, 5)
                     }
                 }
                 .padding(.bottom, 2)
@@ -717,14 +724,18 @@ private struct CalendarPageView: View {
         }
     }
 
-    private func totalText(_ activity: TokenActivity) -> String {
+    private func totalParts(_ activity: TokenActivity) -> (value: String, unit: String) {
         let cells = TokenActivityCalendar.build(days: activity.days).allCells
+        let text: String
         switch metric {
         case .tokens:
-            return TokenActivityCalendar.compactCount(cells.reduce(0) { $0 + $1.tokens })
+            text = TokenActivityCalendar.compactCount(cells.reduce(0) { $0 + $1.tokens })
         case .money:
-            return "≈¥" + SessionCostSnapshot.formatCny(cells.reduce(0) { $0 + $1.cost })
+            return ("≈¥" + SessionCostSnapshot.formatCny(cells.reduce(0) { $0 + $1.cost }), "")
         }
+        if text.hasSuffix("亿") { return (String(text.dropLast()), "亿") }
+        if text.hasSuffix("万") { return (String(text.dropLast()), "万") }
+        return (text, "")
     }
 }
 

@@ -356,11 +356,11 @@ public sealed class TokenActivityTests
         Assert.Equal("0", TokenActivityCalendar.CompactCount(0));
         Assert.Equal("123", TokenActivityCalendar.CompactCount(123));
         Assert.Equal("999", TokenActivityCalendar.CompactCount(999));
-        Assert.Equal("1.0k", TokenActivityCalendar.CompactCount(1000));
-        Assert.Equal("12.3k", TokenActivityCalendar.CompactCount(12_345));
-        Assert.Equal("83.0k", TokenActivityCalendar.CompactCount(83_000));
-        Assert.Equal("1.24M", TokenActivityCalendar.CompactCount(1_240_000));
-        Assert.Equal("13.46B", TokenActivityCalendar.CompactCount(13_460_000_000));
+        Assert.Equal("1000", TokenActivityCalendar.CompactCount(1000));
+        Assert.Equal("1.23万", TokenActivityCalendar.CompactCount(12_345));
+        Assert.Equal("8.3万", TokenActivityCalendar.CompactCount(83_000));
+        Assert.Equal("124万", TokenActivityCalendar.CompactCount(1_240_000));
+        Assert.Equal("134.6亿", TokenActivityCalendar.CompactCount(13_460_000_000));
     }
 
     [Fact]
@@ -368,7 +368,7 @@ public sealed class TokenActivityTests
     {
         var cell = new ActivityCell("2026-10-21", 1_240_000, 0.42m);
 
-        Assert.Equal("10月21日 · 1.24M tokens", TokenActivityCalendar.HoverText(cell, ActivityMetric.Tokens));
+        Assert.Equal("10月21日 · 124万 tokens", TokenActivityCalendar.HoverText(cell, ActivityMetric.Tokens));
         Assert.Equal("10月21日 · ≈¥0.42", TokenActivityCalendar.HoverText(cell, ActivityMetric.Money));
     }
 

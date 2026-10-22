@@ -218,13 +218,27 @@ enum TokenActivityCalendar {
         return Color(red: value.0, green: value.1, blue: value.2)
     }
 
-    /// token 数：123 / 12.3k / 1.24M
+    /// token 数用中文单位：8320 / 1.23万 / 784万 / 4.9亿 / 134.62亿
     static func compactCount(_ value: Int) -> String {
         guard value > 0 else { return "0" }
-        if value >= 1_000_000_000 { return String(format: "%.2fB", Double(value) / 1_000_000_000) }
-        if value >= 1_000_000 { return String(format: "%.2fM", Double(value) / 1_000_000) }
-        if value >= 1_000 { return String(format: "%.1fk", Double(value) / 1_000) }
+        if value >= 100_000_000 {
+            return trimNumber(String(format: "%.2f", Double(value) / 100_000_000)) + "亿"
+        }
+        if value >= 10_000 {
+            let wan = Double(value) / 10_000
+            let digits = wan >= 100 ? 0 : (wan >= 10 ? 1 : 2)
+            return trimNumber(String(format: "%.\(digits)f", wan)) + "万"
+        }
         return String(value)
+    }
+
+    /// 去掉小数末尾的 0：1.00 → 1、4.90 → 4.9
+    static func trimNumber(_ text: String) -> String {
+        guard text.contains(".") else { return text }
+        var value = text
+        while value.hasSuffix("0") { value.removeLast() }
+        if value.hasSuffix(".") { value.removeLast() }
+        return value
     }
 
     /// 悬停文案：10月22日 · 1.24M tokens / ≈¥0.42

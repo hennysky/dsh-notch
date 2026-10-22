@@ -1117,9 +1117,10 @@ func runCalendarCheck() -> Int32 {
     )
     check(
         "日历：token 文案",
-        TokenActivityCalendar.compactCount(1_240_000) == "1.24M" &&
-            TokenActivityCalendar.compactCount(83_000) == "83.0k" &&
-            TokenActivityCalendar.compactCount(13_461_877_705) == "13.46B" &&
+        TokenActivityCalendar.compactCount(1_240_000) == "124万" &&
+            TokenActivityCalendar.compactCount(83_000) == "8.3万" &&
+            TokenActivityCalendar.compactCount(13_461_877_705) == "134.62亿" &&
+            TokenActivityCalendar.compactCount(9_999) == "9999" &&
             TokenActivityCalendar.compactCount(999) == "999",
     )
     check(
@@ -1127,7 +1128,7 @@ func runCalendarCheck() -> Int32 {
         TokenActivityCalendar.hoverText(
             for: ActivityCell(date: "2026-10-21", tokens: 1_240_000, cost: 0.42),
             metric: .tokens,
-        ) == "10月21日 · 1.24M tokens",
+        ) == "10月21日 · 124万 tokens",
         TokenActivityCalendar.hoverText(
             for: ActivityCell(date: "2026-10-21", tokens: 1_240_000, cost: 0.42),
             metric: .tokens,
@@ -1181,7 +1182,7 @@ func runSessionCostCheck() -> Int32 {
     check("金额 ≈¥0.42", snapshot?.moneyText == "≈¥0.42", snapshot?.moneyText ?? "nil")
     check(
         "tokens 文案",
-        snapshot?.tokensText == "输入 1.24M（缓存 980.0k）· 输出 83.0k",
+        snapshot?.tokensText == "输入 124万（缓存 98万）· 输出 8.3万",
         snapshot?.tokensText ?? "nil",
     )
 
@@ -1200,8 +1201,8 @@ func runSessionCostCheck() -> Int32 {
     check("formatCny 小额三/四位", SessionCostSnapshot.formatCny(0.0421) == "0.042"
           && SessionCostSnapshot.formatCny(0.00042) == "0.0004")
     check("compactCount", SessionCostSnapshot.compactCount(999) == "999"
-          && SessionCostSnapshot.compactCount(1_240_000) == "1.24M"
-          && SessionCostSnapshot.compactCount(83_000) == "83.0k",
+          && SessionCostSnapshot.compactCount(1_240_000) == "124万"
+          && SessionCostSnapshot.compactCount(83_000) == "8.3万",
           "\(SessionCostSnapshot.compactCount(999)) / \(SessionCostSnapshot.compactCount(1_240_000)) / \(SessionCostSnapshot.compactCount(83_000))")
 
     print("")

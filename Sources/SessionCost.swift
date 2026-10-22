@@ -95,15 +95,25 @@ struct SessionCostSnapshot: Codable, Equatable {
         return fixed == "0.0000" ? "<0.0001" : fixed
     }
 
-    /// token 数：123 / 12.3k / 1.24M
+    /// token 数用中文单位：8320 / 1.23万 / 784万 / 4.9亿 / 134.62亿
     static func compactCount(_ value: Int) -> String {
         guard value > 0 else { return "0" }
-        if value >= 1_000_000 {
-            return String(format: "%.2fM", Double(value) / 1_000_000)
+        if value >= 100_000_000 {
+            return trimNumber(String(format: "%.2f", Double(value) / 100_000_000)) + "亿"
         }
-        if value >= 1_000 {
-            return String(format: "%.1fk", Double(value) / 1_000)
+        if value >= 10_000 {
+            let wan = Double(value) / 10_000
+            let digits = wan >= 100 ? 0 : (wan >= 10 ? 1 : 2)
+            return trimNumber(String(format: "%.\(digits)f", wan)) + "万"
         }
         return String(value)
+    }
+
+    static func trimNumber(_ text: String) -> String {
+        guard text.contains(".") else { return text }
+        var value = text
+        while value.hasSuffix("0") { value.removeLast() }
+        if value.hasSuffix(".") { value.removeLast() }
+        return value
     }
 }

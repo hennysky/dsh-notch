@@ -379,14 +379,27 @@ public static class TokenActivityCalendar
         Color.FromArgb(255, 74, 191, 125),
     };
 
-    /// <summary>token 数：123 / 12.3k / 1.24M / 13.46B。</summary>
+    /// <summary>token 数用中文单位：123 / 1.23万 / 124万 / 134.6亿。</summary>
     public static string CompactCount(long value)
     {
         if (value <= 0) return "0";
-        if (value >= 1_000_000_000) return (value / 1_000_000_000d).ToString("0.00", CultureInfo.InvariantCulture) + "B";
-        if (value >= 1_000_000) return (value / 1_000_000d).ToString("0.00", CultureInfo.InvariantCulture) + "M";
-        if (value >= 1_000) return (value / 1_000d).ToString("0.0", CultureInfo.InvariantCulture) + "k";
+        if (value >= 100_000_000)
+        {
+            return TrimNumber((value / 100_000_000d).ToString("0.00", CultureInfo.InvariantCulture)) + "亿";
+        }
+        if (value >= 10_000)
+        {
+            var wan = value / 10_000d;
+            var digits = wan >= 100 ? 0 : (wan >= 10 ? 1 : 2);
+            return TrimNumber(wan.ToString("F" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)) + "万";
+        }
         return value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string TrimNumber(string text)
+    {
+        if (!text.Contains('.')) return text;
+        return text.TrimEnd('0').TrimEnd('.');
     }
 
     /// <summary>日期文案：2026-10-21 → 10月21日。</summary>
@@ -400,7 +413,7 @@ public static class TokenActivityCalendar
         return date ?? string.Empty;
     }
 
-    /// <summary>悬停文案：10月21日 · 1.24M tokens / 10月21日 · ≈¥0.42。</summary>
+    /// <summary>悬停文案：10月21日 · 124万 tokens / 10月21日 · ≈¥0.42。</summary>
     public static string HoverText(ActivityCell cell, ActivityMetric metric)
     {
         return DayLabel(cell.Date) + " · " + cell.Text(metric);
@@ -463,7 +476,7 @@ public sealed class TokenActivityView
 
     public bool HasData { get; }
 
-    /// <summary>「1.24M tokens」或「≈¥12.34」；无数据时为空字符串。</summary>
+    /// <summary>「124万 tokens」或「≈¥12.34」；无数据时为空字符串。</summary>
     public string TotalText { get; }
 
     public static TokenActivityView Create(TokenActivitySnapshot? snapshot, ActivityMetric metric, DateTime today)
