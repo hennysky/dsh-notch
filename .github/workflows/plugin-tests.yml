@@ -31,7 +31,7 @@ jobs:
 
       - name: Syntax check
         shell: bash
-        run: node --check plugin/index.js && node --check plugin/test.mjs
+        run: node --check plugin/index.js && node --check plugin/test.mjs && node --check plugin/client.js && node --check plugin/session-cost.js
 
       - name: Plugin tests (skip macOS process-level tests)
         shell: bash

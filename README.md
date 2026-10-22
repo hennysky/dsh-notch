@@ -237,6 +237,15 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | 日志里没有「已注册 3 个监听」 | 插件还是旧版：重启一次 DSH 加载新代码 |
 | 日志里 `HTTP 200 … shown:false` | 卡片设置里对应的开关被关了 |
 
+### 当前会话花费
+
+装插件后，卡片会多一块「当前会话」：你正在看的那个 DSH 会话用了多少 token、
+按官方价目估算花了多少钱（如 `≈¥0.42`，标注预估、以平台账单为准）。
+
+- token 来自 DSH 会话日志，是精确值；金额是按官方高峰/空闲单价折算的估算
+- 只读本地 `~/.dsh/notch/session-cost.json`，不联网、不记录对话内容
+- 数据来源与计价规则见 [docs/session-cost.md](docs/session-cost.md)
+
 ### 设置
 
 卡片右上角的滑杆图标进入设置，分四页：

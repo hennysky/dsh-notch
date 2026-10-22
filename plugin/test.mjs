@@ -26,6 +26,8 @@ import path from 'node:path'
 import {
   DEFAULTS,
   ElectronNotifier,
+  createSessionCostTracker,
+  handleActiveSession,
   NotifyBridge,
   PowerShellToastNotifier,
   UNREAD_BADGE_PNG,
@@ -48,6 +50,16 @@ import {
   resolveSettings,
   sessionName,
 } from './index.js'
+import {
+  buildSessionCostSnapshot,
+  beijingParts,
+  costForUsage,
+  foldSessionEvents,
+  formatCny,
+  isPeak,
+  normalizeModel,
+  pricesFor,
+} from './session-cost.js'
 
 const APP = '/Applications/DSHNotch.app'
 const LOG = path.join(tmpdir(), 'dsh-notch-plugin.log')
@@ -354,7 +366,7 @@ check('桥不可达：写入了失败日志', fallbackLogs.some((line) => line.i
 
 const bridge = await startMockBridge()
 const harness = makeCtx()
-apply(harness.ctx, { appPath: NOT_AN_APP, bridgePort: bridge.port, notifyAborted: false }, { platform: 'darwin' })
+apply(harness.ctx, { appPath: NOT_AN_APP, bridgePort: bridge.port, notifyAborted: false, sessionCost: false }, { platform: 'darwin' })
 
 check(
   'notify:true：注册了 3 个监听',
@@ -528,7 +540,7 @@ await bridge.close()
 
 const offBridge = await startMockBridge()
 const offHarness = makeCtx()
-apply(offHarness.ctx, { appPath: NOT_AN_APP, notify: false, bridgePort: offBridge.port }, { platform: 'darwin' })
+apply(offHarness.ctx, { appPath: NOT_AN_APP, notify: false, sessionCost: false, bridgePort: offBridge.port }, { platform: 'darwin' })
 check('notify:false：ctx.on 一次都没被调用', offHarness.onCalls() === 0, `ctx.on 调用 ${offHarness.onCalls()} 次`)
 check('notify:false：不注册任何 effect', offHarness.effectCleanups.length === 0, `effect ${offHarness.effectCleanups.length} 个`)
 await sleep(150)
@@ -793,8 +805,233 @@ check(
 // C6. 平台解析与 win32 的 apply 不碰 macOS 应用
 check('resolveSettings 记录平台', resolveSettings({}, 'win32').platform === 'win32')
 const winCtx = makeCtx()
-apply(winCtx.ctx, { notify: false }, { platform: 'win32' })
+apply(winCtx.ctx, { notify: false, sessionCost: false }, { platform: 'win32' })
 check('win32 + notify:false 不注册任何监听', winCtx.onCalls() === 0, `ctx.on 调用 ${winCtx.onCalls()} 次`)
+
+// ─────────────────────────────────────────────────────────────
+// D. 当前会话花费（价目 / 折叠 / 快照 / tracker / 上报路由）
+// ─────────────────────────────────────────────────────────────
+
+console.log('\n── D. 当前会话花费 ──')
+
+// 固定时刻，避免测试随时区/时段漂移：
+// 2026-10-21（周三）10:00 北京时间 = 02:00Z；12:30 = 04:30Z；周六 10:00；国庆 10:00
+const peakDate = new Date('2026-10-21T02:00:00Z')
+const offPeakDate = new Date('2026-10-21T04:30:00Z')
+const weekendDate = new Date('2026-10-24T02:00:00Z')
+const holidayDate = new Date('2026-10-01T02:00:00Z')
+
+const peakParts = beijingParts(peakDate)
+check('beijingParts 取北京时间字段', peakParts.date === '2026-10-21' && peakParts.minutes === 600, JSON.stringify(peakParts))
+check('isPeak：工作日 10:00 → 高峰', isPeak(peakParts) === true)
+check('isPeak：工作日 12:30 → 空闲', isPeak(beijingParts(offPeakDate)) === false)
+check('isPeak：周末 → 空闲', isPeak(beijingParts(weekendDate)) === false)
+check('isPeak：法定节假日 → 空闲', isPeak(beijingParts(holidayDate)) === false)
+check(
+  'isPeak：额外节假日覆盖',
+  isPeak(beijingParts(peakDate), { 2026: ['2026-10-21'] }) === false,
+)
+
+const flashPrices = pricesFor('deepseek-flash')
+check(
+  'pricesFor：deepseek-flash 高峰价',
+  flashPrices?.cacheHit === 0.04 && flashPrices?.cacheMiss === 2 && flashPrices?.output === 8,
+  JSON.stringify(flashPrices),
+)
+check(
+  'pricesFor：模型别名归一到 flash',
+  normalizeModel('deepseek-v4-flash') === 'deepseek-flash' && pricesFor('deepseek-v4-flash')?.cacheMiss === 2,
+)
+check('pricesFor：未收录模型返回 undefined', pricesFor('unknown-model') === undefined)
+
+const usage = { inputTokens: 1_000_000, cacheReadTokens: 1_000_000, cacheWriteTokens: 0, outputTokens: 1_000_000 }
+const peakCost = costForUsage(usage, 'deepseek-flash', peakDate.getTime())
+check(
+  '计价：高峰 1M 未命中 + 1M 命中 + 1M 输出 = ¥10.04',
+  peakCost.priced === true && Math.abs(peakCost.cny - 10.04) < 1e-9,
+  String(peakCost.cny),
+)
+const offCost = costForUsage(usage, 'deepseek-flash', offPeakDate.getTime())
+check('计价：空闲半价 = ¥5.02', Math.abs(offCost.cny - 5.02) < 1e-9, String(offCost.cny))
+const cacheWriteCost = costForUsage(
+  { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 1_000_000, outputTokens: 0 },
+  'deepseek-flash',
+  peakDate.getTime(),
+)
+check('计价：缓存写入并入未命中价', cacheWriteCost.priced === true && Math.abs(cacheWriteCost.cny - 2) < 1e-9, String(cacheWriteCost.cny))
+check('计价：未收录模型不报价', costForUsage(usage, 'unknown', peakDate.getTime()).priced === false)
+
+const sessionEvents = [
+  { type: 'session/title', time: peakDate.getTime(), data: { title: '修通知' } },
+  {
+    type: 'assistant/message',
+    time: peakDate.getTime(),
+    data: {
+      message: { source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+      usage: { inputTokens: 1_000_000, cacheReadTokens: 1_000_000, outputTokens: 1_000_000 },
+    },
+  },
+  {
+    type: 'assistant/message',
+    time: offPeakDate.getTime(),
+    data: {
+      message: { source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+      usage: { inputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 },
+    },
+  },
+]
+const folded = foldSessionEvents(sessionEvents)
+check('fold：标题取 session/title', folded.title === '修通知')
+check(
+  'fold：用量累加',
+  folded.usage.uncachedInputTokens === 2_000_000 &&
+    folded.usage.cacheReadTokens === 1_000_000 &&
+    folded.usage.outputTokens === 1_000_000 &&
+    folded.usage.requests === 2,
+  JSON.stringify(folded.usage),
+)
+check(
+  'fold：按每条消息时间计价（10.04 + 1.00）',
+  folded.cost.priced === true && Math.abs(folded.cost.cny - 11.04) < 1e-9,
+  String(folded.cost.cny),
+)
+check('fold：模型列表', folded.model === 'deepseek-flash' && folded.models.length === 1, JSON.stringify(folded.models))
+check(
+  'fold：非 DeepSeek provider 不报价',
+  foldSessionEvents([
+    {
+      type: 'assistant/message',
+      time: peakDate.getTime(),
+      data: { message: { source: { provider: 'openai', model: 'x' } }, usage: { inputTokens: 1, outputTokens: 1 } },
+    },
+  ]).cost.priced === false,
+)
+
+const snapshot = buildSessionCostSnapshot({
+  sessionId: 'session-demo',
+  events: sessionEvents,
+  source: 'client',
+  titleFallback: 'default-workspace',
+  now: peakDate.getTime(),
+})
+check(
+  'snapshot：schema/来源/预估标记',
+  snapshot.schema === 1 && snapshot.sessionId === 'session-demo' && snapshot.source === 'client' &&
+    snapshot.cost.priced === true && snapshot.cost.estimated === true,
+  JSON.stringify(snapshot.cost),
+)
+check('snapshot：标题优先 session/title', snapshot.title === '修通知')
+check('snapshot：usage 形状', snapshot.usage.requests === 2 && snapshot.usage.uncachedInputTokens === 2_000_000)
+const emptySnapshot = buildSessionCostSnapshot({
+  sessionId: 'session-empty',
+  events: [],
+  titleFallback: 'ws',
+  now: peakDate.getTime(),
+})
+check('snapshot：无用量时 priced=false、标题用兜底', emptySnapshot.cost.priced === false && emptySnapshot.title === 'ws')
+
+check('formatCny：大额两位', formatCny(1.234) === '1.23')
+check('formatCny：小额三/四位', formatCny(0.42) === '0.42' && formatCny(0.0421) === '0.042' && formatCny(0.00042) === '0.0004')
+check('formatCny：0', formatCny(0) === '0')
+
+// tracker：注入假 ctx / 假写盘 / 固定时钟
+const writtenSnapshots = []
+const fakeSessionCtx = {
+  get(name) {
+    if (name !== 'sessions') return undefined
+    return {
+      get(id) {
+        if (id !== 'session-demo') return undefined
+        return { header: { id: 'session-demo', cwd: '/tmp/default-workspace' }, ownEvents: () => sessionEvents }
+      },
+    }
+  },
+}
+const trackerSettings = { sessionCostFile: '/tmp/session-cost-test.json', sessionCostPricing: {}, sessionCostHolidays: {} }
+const tracker = createSessionCostTracker(fakeSessionCtx, trackerSettings, {
+  log: () => {},
+  now: () => peakDate.getTime(),
+  debounceMs: 10_000,
+  write: async (file, snap) => {
+    writtenSnapshots.push({ file, snap })
+  },
+})
+tracker.setActive('session-demo')
+await tracker.flush()
+check(
+  'tracker：client 上报后写快照',
+  writtenSnapshots.length === 1 &&
+    writtenSnapshots[0].snap.sessionId === 'session-demo' &&
+    writtenSnapshots[0].snap.source === 'client',
+  JSON.stringify(writtenSnapshots.map((item) => item.snap?.source)),
+)
+tracker.noteActivity('session-other')
+check('tracker：client 上报后不被其他会话活动抢走', tracker.active.sessionId === 'session-demo', JSON.stringify(tracker.active))
+tracker.dispose()
+
+const recentTracker = createSessionCostTracker(fakeSessionCtx, trackerSettings, {
+  log: () => {},
+  now: () => peakDate.getTime(),
+  debounceMs: 10_000,
+  write: async () => {},
+})
+recentTracker.noteActivity('session-demo')
+check('tracker：没有 UI 上报时用最近活跃兜底', recentTracker.active.source === 'recent')
+recentTracker.dispose()
+
+// 上报路由：用假 req/res 直接调 handler
+const { Readable } = await import('node:stream')
+function makeRequest(method, body) {
+  const request = Readable.from(body === undefined ? [] : [Buffer.from(body)])
+  request.method = method
+  return request
+}
+function makeResponse() {
+  return {
+    statusCode: 0,
+    text: '',
+    writeHead(code) {
+      this.statusCode = code
+    },
+    end(text) {
+      this.text = text
+    },
+  }
+}
+const routeCalls = []
+const fakeTracker = { setActive: (id, source) => routeCalls.push({ id, source }) }
+let response = makeResponse()
+await handleActiveSession(fakeSessionCtx, fakeTracker, makeRequest('POST', JSON.stringify({ sessionId: 'session-demo' })), response)
+check(
+  '路由：合法 POST → 200 且 setActive(client)',
+  response.statusCode === 200 && routeCalls[0]?.id === 'session-demo' && routeCalls[0]?.source === 'client',
+  `${response.statusCode} ${response.text}`,
+)
+response = makeResponse()
+await handleActiveSession(fakeSessionCtx, fakeTracker, makeRequest('POST', '{}'), response)
+check('路由：缺 sessionId → 400', response.statusCode === 400, `${response.statusCode} ${response.text}`)
+response = makeResponse()
+await handleActiveSession(fakeSessionCtx, fakeTracker, makeRequest('GET'), response)
+check('路由：方法错 → 405', response.statusCode === 405, `${response.statusCode} ${response.text}`)
+response = makeResponse()
+await handleActiveSession(fakeSessionCtx, fakeTracker, makeRequest('POST', JSON.stringify({ sessionId: 'nope' })), response)
+check('路由：未知会话 → 404', response.statusCode === 404, `${response.statusCode} ${response.text}`)
+
+// apply：sessionCost 开启时只注册自己的监听（通知关闭也不影响）
+const sessionCostCtx = makeCtx()
+apply(sessionCostCtx.ctx, { appPath: NOT_AN_APP, notify: false, sessionCost: true }, { platform: 'darwin' })
+check(
+  'apply：sessionCost 开启 → 注册 1 个 session/event 监听 + 1 个 effect',
+  sessionCostCtx.onCalls() === 1 && sessionCostCtx.effectCleanups.length === 1,
+  `ctx.on=${sessionCostCtx.onCalls()} effects=${sessionCostCtx.effectCleanups.length}`,
+)
+check(
+  'apply：sessionCost 监听带 global',
+  sessionCostCtx.records('session/event')[0]?.options?.global === true,
+  JSON.stringify(sessionCostCtx.records('session/event')[0]?.options),
+)
+sessionCostCtx.unload()
+check('apply：卸载后监听摘除', sessionCostCtx.totalActive() === 0, `active=${sessionCostCtx.totalActive()}`)
 
 // ─────────────────────────────────────────────────────────────
 // B. 原有进程级三态（会临时启动 / 收掉 DSHNotch.app）
@@ -848,13 +1085,13 @@ if (SKIP_PROCESS) {
   rmSync(LOG, { force: true })
   check('前置：/Applications/DSHNotch.app 存在', existsSync(APP), APP)
 
-  apply(ctx, { appPath: APP, notify: false }, { platform: 'darwin' })
+  apply(ctx, { appPath: APP, notify: false, sessionCost: false }, { platform: 'darwin' })
   await sleep(2500)
   check('未运行 → 启动', lastLog().includes('已随 DSH 启动'), lastLog())
   const afterLaunch = pgrep(['-x', 'DSHNotch'])
   check('进程真的起来了', afterLaunch.length === 1, `pid ${afterLaunch.join(',')}`)
 
-  apply(ctx, { appPath: APP, notify: false }, { platform: 'darwin' })
+  apply(ctx, { appPath: APP, notify: false, sessionCost: false }, { platform: 'darwin' })
   await sleep(1500)
   check('已在运行 → 不重复启动', lastLog().includes('已在运行'), lastLog())
   check(
@@ -863,7 +1100,7 @@ if (SKIP_PROCESS) {
     `实例数 ${pgrep(['-x', 'DSHNotch']).length}`,
   )
 
-  apply(ctx, { appPath: '/Applications/DefinitelyNotHere.app', notify: false }, { platform: 'darwin' })
+  apply(ctx, { appPath: '/Applications/DefinitelyNotHere.app', notify: false, sessionCost: false }, { platform: 'darwin' })
   await sleep(800)
   check('路径不存在 → 安静跳过', lastLog().includes('跳过'), lastLog())
 }

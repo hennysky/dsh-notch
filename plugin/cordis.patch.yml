@@ -13,3 +13,9 @@
         notifyBackend: auto
         # 托盘应用路径；留空自动探测 %LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe
         windowsAppPath: ''
+        # 当前会话花费：写 ~/.dsh/notch/session-cost.json，供 DSHNotch 卡片读取
+        sessionCost: true
+        # 覆盖价目表（可选），形如 { 'deepseek-flash': { cacheHit: 0.04, cacheMiss: 2, output: 8 } }
+        # sessionCostPricing: {}
+        # 额外节假日（YYYY-MM-DD 数组），并入内置 2026 表
+        # sessionCostHolidays: []

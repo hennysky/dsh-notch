@@ -43,6 +43,12 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 
+import {
+  buildSessionCostSnapshot,
+  defaultSessionCostFile,
+  writeSessionCostSnapshot,
+} from './session-cost.js'
+
 const execFileAsync = promisify(execFile)
 
 /**
@@ -90,6 +96,14 @@ export const DEFAULTS = {
   notifyBackend: 'auto',
   /** PowerShell 可执行文件（Windows 兜底通知用）。 */
   powershellPath: 'powershell.exe',
+  /** 是否记录「当前会话花费」并写快照（docs/session-cost.md）。 */
+  sessionCost: true,
+  /** 快照路径；留空 = ~/.dsh/notch/session-cost.json。 */
+  sessionCostFile: '',
+  /** 覆盖价目表，形如 { 'deepseek-flash': { cacheHit: 0.04, cacheMiss: 2, output: 8 } }。 */
+  sessionCostPricing: {},
+  /** 额外节假日（YYYY-MM-DD 数组），并入内置 2026 表。 */
+  sessionCostHolidays: [],
   /**
    * Windows 托盘应用路径（DSHNotch.exe）。留空则自动探测
    * `%LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe`。
@@ -985,6 +999,280 @@ export function createNotificationRuntime({
 }
 
 // ─────────────────────────────────────────────────────────────
+// 当前会话花费（docs/session-cost.md）
+// ─────────────────────────────────────────────────────────────
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** 把 ['2026-01-01', ...] 或 { '2026': [...] } 收敛成 { 年: [日期] }。 */
+function normalizeHolidays(value) {
+  const result = {}
+  const add = (date) => {
+    if (typeof date !== 'string') return
+    const trimmed = date.trim()
+    const match = /^(\d{4})-\d{2}-\d{2}$/.exec(trimmed)
+    if (match === null) return
+    const year = match[1]
+    if (result[year] === undefined) result[year] = []
+    if (!result[year].includes(trimmed)) result[year].push(trimmed)
+  }
+  if (Array.isArray(value)) {
+    value.forEach(add)
+  } else if (isPlainObject(value)) {
+    for (const dates of Object.values(value)) {
+      if (Array.isArray(dates)) dates.forEach(add)
+      else add(dates)
+    }
+  }
+  return result
+}
+
+/** 读请求体（64 KiB 上限；超限直接断开）。 */
+function readRequestBody(req, limit = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size > limit) {
+        reject(new Error('body too large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', reject)
+  })
+}
+
+/** 从宿主服务里取会话事件；兼容内存会话 / sessionQuery / sessionPersistence。 */
+async function readSessionEvents(ctx, sessionId) {
+  const sessions = ctx.get?.('sessions')
+  const session = sessions?.get?.(sessionId)
+  let events = null
+  if (session) {
+    try {
+      if (typeof session.ownEvents === 'function') events = session.ownEvents()
+      else if (Array.isArray(session.events)) events = session.events
+    } catch {
+      events = null
+    }
+  }
+  if (events === null) {
+    const query = ctx.get?.('sessionQuery')
+    if (query !== undefined && typeof query.readSession === 'function') {
+      try {
+        const snapshot = await query.readSession(sessionId)
+        if (Array.isArray(snapshot?.events)) events = snapshot.events
+      } catch {
+        // 交给下一个来源
+      }
+    }
+  }
+  if (events === null) {
+    const persistence = ctx.get?.('sessionPersistence')
+    if (persistence !== undefined && typeof persistence.readFrom === 'function') {
+      try {
+        const read = await persistence.readFrom(sessionId, 0)
+        if (Array.isArray(read?.events)) events = read.events
+      } catch {
+        // 读不到就当作没有
+      }
+    }
+  }
+  return { session, events }
+}
+
+/** 会话标题兜底：工作目录 basename。 */
+function sessionTitleFallback(session) {
+  const cwd = session?.header?.cwd
+  if (typeof cwd === 'string' && cwd !== '') {
+    const base = path.basename(cwd)
+    if (base !== '' && base !== '.' && base !== path.sep) return base
+  }
+  return ''
+}
+
+/**
+ * 跟踪「当前会话」并落盘快照。
+ *
+ * 会话来源有两层：
+ * - `client`：Web UI 组件上报的 sessionId（精确，用户正在看的那个）
+ * - `recent`：没有上报时，用最近有事件活动的根会话兜底
+ *
+ * 导出给单测：测试用假 ctx / 假 now / 假写盘，不依赖 DSH。
+ */
+export function createSessionCostTracker(
+  ctx,
+  settings,
+  {
+    log: logger = log,
+    now = Date.now,
+    debounceMs = 1200,
+    write = writeSessionCostSnapshot,
+  } = {},
+) {
+  let activeSessionId = null
+  let activeSource = 'recent'
+  let timer = null
+  let flushing = false
+  let disposed = false
+  let lastLoggedSessionId = null
+  let lastLoggedAt = 0
+
+  const schedule = (delay = debounceMs) => {
+    if (disposed) return
+    if (timer !== null) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      void flush()
+    }, delay)
+  }
+
+  const flush = async () => {
+    if (disposed || flushing) return
+    const sessionId = activeSessionId
+    if (typeof sessionId !== 'string' || sessionId === '') return
+    flushing = true
+    try {
+      const { session, events } = await readSessionEvents(ctx, sessionId)
+      if (events === null) {
+        logger(`会话花费：读取不到会话 ${sessionId} 的事件，保留上一次快照`)
+        return
+      }
+      const snapshot = buildSessionCostSnapshot({
+        sessionId,
+        events,
+        source: activeSource,
+        titleFallback: sessionTitleFallback(session),
+        now: now(),
+        pricing: settings.sessionCostPricing,
+        holidays: settings.sessionCostHolidays,
+      })
+      await write(settings.sessionCostFile, snapshot)
+      const current = now()
+      if (sessionId !== lastLoggedSessionId || current - lastLoggedAt > 60_000) {
+        lastLoggedSessionId = sessionId
+        lastLoggedAt = current
+        const money = snapshot.cost.priced
+          ? `≈¥${snapshot.cost.cny.toFixed(3)}`
+          : '金额不可用（未收录模型）'
+        const tokens =
+          snapshot.usage.uncachedInputTokens + snapshot.usage.cacheReadTokens + snapshot.usage.outputTokens
+        logger(`会话花费：${snapshot.title || sessionId} ${tokens} tokens ${money}（${activeSource}）`)
+      }
+    } catch (error) {
+      logger(`会话花费：写快照失败（${describeError(error)}）`)
+    } finally {
+      flushing = false
+    }
+  }
+
+  return {
+    /** UI 上报：用户切到某个会话。 */
+    setActive(sessionId, source = 'client') {
+      if (typeof sessionId !== 'string' || sessionId === '') return
+      activeSessionId = sessionId
+      activeSource = source
+      schedule(0)
+    },
+    /** 会话活动：没有 UI 上报时用它推断「最近活跃会话」。 */
+    noteActivity(sessionId) {
+      if (typeof sessionId !== 'string' || sessionId === '') return
+      if (activeSource === 'client' && activeSessionId !== sessionId) return
+      activeSessionId = sessionId
+      activeSource = 'recent'
+      schedule()
+    },
+    dispose() {
+      disposed = true
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+    },
+    flush,
+    get active() {
+      return { sessionId: activeSessionId, source: activeSource }
+    },
+  }
+}
+
+/** client 上报路由的 handler。 */
+export async function handleActiveSession(ctx, tracker, req, res) {
+  const send = (status, body) => {
+    res.writeHead(status, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    })
+    res.end(JSON.stringify(body))
+  }
+  if (req.method !== 'POST') return send(405, { ok: false, error: 'method not allowed' })
+  let payload
+  try {
+    payload = JSON.parse(await readRequestBody(req))
+  } catch {
+    return send(400, { ok: false, error: 'invalid json' })
+  }
+  const sessionId = payload?.sessionId
+  if (typeof sessionId !== 'string' || sessionId === '') {
+    return send(400, { ok: false, error: 'missing sessionId' })
+  }
+  const { events } = await readSessionEvents(ctx, sessionId)
+  if (events === null) return send(404, { ok: false, error: 'session not found' })
+  tracker.setActive(sessionId, 'client')
+  return send(200, { ok: true })
+}
+
+/** 注册 client 上报路由 + 根会话活动监听。 */
+function registerSessionCost(ctx, settings) {
+  const tracker = createSessionCostTracker(ctx, settings)
+  const webServer = ctx.get?.('webServer')
+
+  ctx.effect(() => {
+    let detachEvent = null
+    let detachRoute = null
+    try {
+      detachEvent = ctx.on(
+        'session/event',
+        (session) => {
+          try {
+            if (!isRootSession(session)) return
+            const sessionId = session?.header?.id ?? session?.id
+            if (typeof sessionId === 'string' && sessionId !== '') tracker.noteActivity(sessionId)
+          } catch (error) {
+            log(`会话花费：处理 session/event 失败（${describeError(error)}）`)
+          }
+        },
+        { global: true },
+      )
+      if (webServer !== undefined && typeof webServer.register === 'function') {
+        detachRoute = webServer.register(
+          {
+            kind: 'exact',
+            path: '/api/notch/active-session',
+            handler: (req, res) => handleActiveSession(ctx, tracker, req, res),
+          },
+          'notch-balance.sessionCost',
+        )
+      } else {
+        log('会话花费：当前组合没有 webServer，无法接收 UI 上报，按最近活跃会话推断')
+      }
+    } catch (error) {
+      log(`会话花费：注册失败（${describeError(error)}），已跳过界面定位`)
+    }
+    return () => {
+      if (typeof detachEvent === 'function') detachEvent()
+      if (typeof detachRoute === 'function') detachRoute()
+      tracker.dispose()
+    }
+  }, 'notch-balance.sessionCost')
+
+  log(`会话花费：已启用（快照 ${settings.sessionCostFile}）`)
+}
+
+// ─────────────────────────────────────────────────────────────
 // 插件入口
 // ─────────────────────────────────────────────────────────────
 
@@ -1026,6 +1314,13 @@ export function resolveSettings(config, platform = process.platform) {
         ? settings.powershellPath
         : DEFAULTS.powershellPath,
     windowsAppPath,
+    sessionCost: settings.sessionCost !== false,
+    sessionCostFile:
+      typeof settings.sessionCostFile === 'string' && settings.sessionCostFile !== ''
+        ? settings.sessionCostFile
+        : defaultSessionCostFile(),
+    sessionCostPricing: isPlainObject(settings.sessionCostPricing) ? settings.sessionCostPricing : {},
+    sessionCostHolidays: normalizeHolidays(settings.sessionCostHolidays),
   }
 }
 
@@ -1101,6 +1396,15 @@ function registerNotificationListeners(ctx, settings, sender) {
  */
 export function apply(ctx, config = {}, runtime = {}) {
   const settings = resolveSettings(config, runtime.platform ?? process.platform)
+
+  // 当前会话花费与通知彼此独立：即使关掉通知，也继续记录花费快照。
+  if (settings.sessionCost) {
+    try {
+      registerSessionCost(ctx, settings)
+    } catch (error) {
+      log(`会话花费：初始化失败（${describeError(error)}），已跳过`)
+    }
+  }
 
   // macOS：确保 DSHNotch.app 在跑（Windows 不需要伴侣应用，通知直接由宿主进程发）
   if (settings.platform === 'darwin') {

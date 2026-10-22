@@ -145,6 +145,28 @@ func runRenderCheck() -> Int32 {
     let setupCase = setupArgument()
     if let setupCase { model.injectSetupIssue(setupCase) }
 
+    let isSessionCost = CommandLine.arguments.contains("--render-session")
+    if isSessionCost {
+        model.injectSessionCost(SessionCostSnapshot(
+            schema: 1,
+            sessionId: "session-demo",
+            title: "修 Windows 通知",
+            model: "deepseek-flash",
+            models: ["deepseek-flash"],
+            source: "client",
+            updatedAt: Date().timeIntervalSince1970 * 1000,
+            usage: SessionCostSnapshot.Usage(
+                uncachedInputTokens: 1_240_000,
+                cacheReadTokens: 980_000,
+                cacheWriteTokens: 0,
+                outputTokens: 83_000,
+                requests: 12),
+            cost: SessionCostSnapshot.Cost(
+                cny: 0.42, priced: true, peak: true, estimated: true,
+                note: "按官方公开单价估算，以平台账单为准"),
+        ))
+    }
+
     var state = CardState()
     state.isExpanded = true
     state.showSettings = CommandLine.arguments.contains("--render-settings")
@@ -177,6 +199,7 @@ func runRenderCheck() -> Int32 {
     if setupCase != nil { name = "dsh-notch-setup-\(setupCase == .notConnected ? "none" : "signedout").png" }
     else if unknownToday { name = "dsh-notch-unknown.png" }
     else if isAlert { name = "dsh-notch-alert.png" }
+    else if isSessionCost { name = "dsh-notch-session-cost.png" }
     else if state.showSettings { name = "dsh-notch-settings-\(state.settingsTab.rawValue).png" }
     else if menuBarStyle { name = "dsh-notch-menubar.png" }
     else { name = "dsh-notch-expanded.png" }
@@ -998,7 +1021,62 @@ func redPixelCount(_ image: NSImage?) -> Int {
     return count
 }
 
+// MARK: - 当前会话花费自检
+
+@MainActor
+func runSessionCostCheck() -> Int32 {
+    var failed = 0
+    func check(_ name: String, _ ok: Bool, _ detail: String = "") {
+        if !ok { failed += 1 }
+        print("\(ok ? "✓" : "✗") \(name)")
+        print("    \(detail)")
+    }
+
+    let now = Date().timeIntervalSince1970 * 1000
+    let base = """
+    {"schema":1,"sessionId":"session-demo","title":"修通知","model":"deepseek-flash",\
+    "models":["deepseek-flash"],"source":"client","updatedAt":\(Int(now)),\
+    "usage":{"uncachedInputTokens":1240000,"cacheReadTokens":980000,"cacheWriteTokens":0,\
+    "outputTokens":83000,"requests":12},\
+    "cost":{"cny":0.42,"priced":true,"peak":true,"estimated":true,"note":"x"}}
+    """
+
+    let snapshot = SessionCostSnapshot.parse(Data(base.utf8))
+    check("解析有效快照", snapshot != nil)
+    check("标题", snapshot?.titleText == "修通知", snapshot?.titleText ?? "nil")
+    check("金额 ≈¥0.42", snapshot?.moneyText == "≈¥0.42", snapshot?.moneyText ?? "nil")
+    check(
+        "tokens 文案",
+        snapshot?.tokensText == "输入 1.24M（缓存 980.0k）· 输出 83.0k",
+        snapshot?.tokensText ?? "nil",
+    )
+
+    let expired = base.replacingOccurrences(of: "\"updatedAt\":\(Int(now))",
+                                            with: "\"updatedAt\":\(Int(now - 25 * 60 * 60 * 1000))")
+    check("过期快照不显示", SessionCostSnapshot.parse(Data(expired.utf8)) == nil)
+
+    let unpriced = base.replacingOccurrences(of: "\"priced\":true", with: "\"priced\":false")
+    check("未定价快照不显示金额", SessionCostSnapshot.parse(Data(unpriced.utf8))?.moneyText == nil)
+
+    let badSchema = base.replacingOccurrences(of: "\"schema\":1", with: "\"schema\":2")
+    check("schema 不符不显示", SessionCostSnapshot.parse(Data(badSchema.utf8)) == nil)
+    check("坏 JSON 不崩", SessionCostSnapshot.parse(Data("not json".utf8)) == nil)
+
+    check("formatCny 大额两位", SessionCostSnapshot.formatCny(1.234) == "1.23")
+    check("formatCny 小额三/四位", SessionCostSnapshot.formatCny(0.0421) == "0.042"
+          && SessionCostSnapshot.formatCny(0.00042) == "0.0004")
+    check("compactCount", SessionCostSnapshot.compactCount(999) == "999"
+          && SessionCostSnapshot.compactCount(1_240_000) == "1.24M"
+          && SessionCostSnapshot.compactCount(83_000) == "83.0k",
+          "\(SessionCostSnapshot.compactCount(999)) / \(SessionCostSnapshot.compactCount(1_240_000)) / \(SessionCostSnapshot.compactCount(83_000))")
+
+    print("")
+    print(failed == 0 ? "当前会话花费自检全部通过" : "\(failed) 项失败")
+    return failed == 0 ? 0 : 1
+}
+
 // MARK: - 入口
+
 
 if CommandLine.arguments.contains("--version") {
     print("DSHNotch \(appVersion())")
@@ -1042,6 +1120,9 @@ if CommandLine.arguments.contains("--notifycheck") {
 }
 if CommandLine.arguments.contains("--unreadcheck") {
     exit(MainActor.assumeIsolated { runUnreadCheck() })
+}
+if CommandLine.arguments.contains("--sessioncostcheck") {
+    exit(MainActor.assumeIsolated { runSessionCostCheck() })
 }
 
 // MARK: - 正常启动

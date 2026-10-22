@@ -250,6 +250,16 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | No "已注册 3 个监听" in the log | the plugin is still the old version: restart DSH once |
 | `HTTP 200 … shown:false` in the log | the matching toggle is off in the card settings |
 
+### Current session cost
+
+With the plugin installed, the card gains a **current session** section: how many tokens the
+DSH session you are looking at used, and an estimated cost at the official rates (e.g. `≈¥0.42`,
+labelled as an estimate; the platform bill is authoritative).
+
+- Tokens come from the DSH session log and are exact; the money is an estimate using the
+  official peak / off-peak rates. Only `~/.dsh/notch/session-cost.json` is read locally — no
+  network calls, no conversation content. Details: [docs/session-cost.md](docs/session-cost.md)
+
 ### Settings
 
 Click the slider icon in the card header. Four pages:

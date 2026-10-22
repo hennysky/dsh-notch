@@ -296,6 +296,50 @@ struct BalanceCard: View {
             detail("赠送钱包", model.bonusText)
             detail("累计消费", model.costText)
             detail("今日消耗", model.todayCostText)
+
+            if let session = model.sessionCost, session.isFresh {
+                Divider().overlay(Color.white.opacity(0.10)).padding(.vertical, 6)
+                sessionCostRow(session)
+            }
+        }
+    }
+
+    /// 当前会话花费：标题 + 模型/tokens + 预估金额。
+    /// 数据来自 DSH 插件写的本地快照；没有快照/过期/金额不可用时整块隐藏金额。
+    private func sessionCostRow(_ session: SessionCostSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Text("当前会话")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.white.opacity(0.42))
+                Text(session.titleText)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                if let money = session.moneyText {
+                    Text(money)
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.9))
+                } else {
+                    Text("金额待估")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.35))
+                }
+            }
+            HStack(spacing: 4) {
+                Text("\(session.modelText) · \(session.tokensText) tokens")
+                    .font(.system(size: 8.5))
+                    .foregroundStyle(.white.opacity(0.28))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if session.cost.estimated {
+                    Text("预估")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.22))
+                }
+            }
         }
     }
 

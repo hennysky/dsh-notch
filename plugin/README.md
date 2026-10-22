@@ -104,6 +104,41 @@ NOTCH_SKIP_PROCESS_TESTS=1 node plugin/test.mjs
 测试里注入了假的 `electron` 和假的本地桥，所以三种后端的**选择顺序**与
 `send` / 未读 / 点击行为都能在 macOS 上验证；真实 toast 与托盘外观只能在 Windows 上肉眼确认。
 
+## 当前会话花费（哪个窗口花了多少钱）
+
+除了通知，插件还会记录**你正在看的那个 DSH 会话**用了多少 token、按官方价目估算花了多少钱。
+数据写到 `~/.dsh/notch/session-cost.json`，macOS / Windows 两个客户端都读同一份。
+
+```
+DSH Web UI（会话页）
+  └─ client.js：注册一个不可见组件到 conversation.input.right
+       │ 拿到当前 sessionId → POST /api/notch/active-session
+       ▼
+Host 插件：读会话事件（assistant/message.usage + 模型 + 时间）
+  ├─ 按每条消息的时间/模型计价（高峰 / 空闲半价）
+  └─ 原子写 ~/.dsh/notch/session-cost.json
+       ▼
+DSHNotch.app / DSHNotch.exe 卡片里的「当前会话」区块
+```
+
+- **token 精确**：来自 DSH 会话日志的 `usage`
+- **金额是预估**：DSH/平台都没有按会话计费的数据；按官方公开单价折算，UI 标注「以平台账单为准」
+- 计价规则：`deepseek-flash` 缓存命中 0.04 / 未命中 2 / 输出 8（元/百万 tokens，高峰价）；
+  空闲时段（工作日 9-12、14-18 之外，以及周末/节假日）半价；缓存写入并入未命中
+- 没有 UI 上报时退回「最近活跃会话」；未收录模型只显示 token，不显示金额
+- 只记录 sessionId / 标题 / token / 金额，不记录任何对话内容
+
+配置（`cordis.patch.yml` 的 `config`）：
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `sessionCost` | `true` | 是否记录并写快照 |
+| `sessionCostFile` | `~/.dsh/notch/session-cost.json` | 快照路径 |
+| `sessionCostPricing` | `{}` | 覆盖价目表（模型 → cacheHit/cacheMiss/output） |
+| `sessionCostHolidays` | `[]` | 额外法定节假日（YYYY-MM-DD） |
+
+协议与实现细节见 [docs/session-cost.md](../docs/session-cost.md)。
+
 ## DSH 通知（任务完成 / 需要你处理）
 
 DSH 桌面端本身不发通知。插件监听会话事件，通过 `DSHNotch.app` 的本地 HTTP 桥
