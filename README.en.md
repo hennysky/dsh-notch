@@ -21,7 +21,7 @@ Three things:
 - **DSH notifications**: macOS notifications when a task finishes, fails, or the agent stops for your approval or answer. Click to switch back to DSH; the banner disappears, but the **red dot on the menu bar does not** — until you open the card.
 - **Starts with DSH**: one companion plugin launches it with DSH and bridges session events into notifications.
 
-> Status: v1.4 · MIT · macOS 14+ · Apple Silicon — 12 human-free self-checks, plugin tests and real notification delivery all verified.
+> Status: v1.5 (Windows 1.1.0 / plugin 1.4.0) · MIT · macOS 14+ · Apple Silicon — 12 human-free self-checks, plugin tests and real notification delivery all verified.
 
 ---
 
@@ -69,7 +69,7 @@ The packages on both platforms are byte-for-byte identical. Either one works.
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.5/DSHNotch-1.4.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.6/DSHNotch-1.5.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -252,7 +252,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 
 ### Current session cost
 
-With the plugin installed, the card gains a **current session** section: how many tokens the
+With the plugin installed (1.4.0+), the card gains a **current session** section: how many tokens the
 DSH session you are looking at used, and an estimated cost at the official rates (e.g. `≈¥0.42`,
 labelled as an estimate; the platform bill is authoritative).
 
@@ -294,7 +294,7 @@ instead of launching it by hand.
 2. **Notification bridge** (v1.1.0+): it POSTs DSH's turn-finished / approval / question events
    to DSHNotch, which turns them into macOS notifications (see "DSH notifications" above).
 
-> **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.0.1.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.5/DSHNotch-Setup-1.0.1.exe) — it installs
+> **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.0.1.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.6/DSHNotch-Setup-1.1.0.exe) — it installs
 > into `%LOCALAPPDATA%\Programs\DSHNotch` with a Start Menu shortcut (no unzip, no command line);
 > the plugin (v1.3.0+) detects and launches it. Without the tray app it falls back to DeepSeek
 > Harness's own Electron notifications, then to a PowerShell toast. Source lives in
