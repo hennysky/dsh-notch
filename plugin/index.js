@@ -1086,6 +1086,51 @@ async function readSessionEvents(ctx, sessionId) {
   return { session, events }
 }
 
+/**
+ * 收集根会话的所有后代会话（子智能体 / 团队成员的会话）。
+ *
+ * 为什么用 `sessionQuery.traceSession`：会话头里有 `parentSession`，查询服务能递归
+ * 给出后代树，既包含活跃会话也包含已持久化的历史会话；只看 `ctx.sessions` 会漏掉
+ * 已经结束/被回收的子智能体。
+ *
+ * 只统计**自己的事件**：fork/seed 会话会继承父会话历史，重复计入会让费用翻倍，
+ * 所以 `isSeeded` 的会话整棵跳过。
+ */
+async function collectDescendantSessions(ctx, rootSessionId, { limit = 50 } = {}) {
+  const query = ctx.get?.('sessionQuery')
+  if (query === undefined || typeof query.traceSession !== 'function') return []
+  let trace
+  try {
+    trace = await query.traceSession(rootSessionId)
+  } catch (error) {
+    log(`会话花费：traceSession 失败（${describeError(error)}），只统计根会话`)
+    return []
+  }
+
+  const pending = Array.isArray(trace?.descendants) ? [...trace.descendants] : []
+  const candidates = []
+  while (pending.length > 0 && candidates.length < limit) {
+    const node = pending.shift()
+    const header = node?.session?.header
+    const id = header?.id
+    if (typeof id === 'string' && id !== '') {
+      candidates.push({ id, seeded: header?.isSeeded === true })
+    }
+    if (Array.isArray(node?.descendants)) pending.push(...node.descendants)
+  }
+
+  const extra = []
+  for (const candidate of candidates) {
+    if (candidate.seeded) continue
+    const { session, events } = await readSessionEvents(ctx, candidate.id)
+    if (events === null) continue
+    if (session?.header?.isSeeded === true) continue
+    extra.push({ sessionId: candidate.id, events })
+  }
+  if (extra.length > 0) log(`会话花费：根 ${rootSessionId} 子会话 ${extra.length} 个已计入`)
+  return extra
+}
+
 /** 会话标题兜底：工作目录 basename。 */
 function sessionTitleFallback(session) {
   const cwd = session?.header?.cwd
@@ -1143,9 +1188,11 @@ export function createSessionCostTracker(
         logger(`会话花费：读取不到会话 ${sessionId} 的事件，保留上一次快照`)
         return
       }
+      const extraSessions = await collectDescendantSessions(ctx, sessionId)
       const snapshot = buildSessionCostSnapshot({
         sessionId,
         events,
+        extraSessions,
         source: activeSource,
         titleFallback: sessionTitleFallback(session),
         now: now(),

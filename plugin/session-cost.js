@@ -233,6 +233,55 @@ export function foldSessionEvents(events, { pricing = {}, holidays = {} } = {}) 
   }
 }
 
+/**
+ * 把「根会话 + 若干子智能体会话」的事件折叠成一个总量。
+ *
+ * - 标题/主模型取根会话
+ * - token 与费用累加所有会话（子智能体的花费也算进这个窗口）
+ * - 任一子会话含未收录模型 → priced=false，整块不显示金额
+ *
+ * @param parts - `[{ events, isRoot? }, ...]`；第一项应为根会话
+ */
+export function foldSessionParts(parts, options = {}) {
+  const list = Array.isArray(parts) ? parts : []
+  const folds = list.map((part) => foldSessionEvents(part?.events ?? [], options))
+  const root = folds[0]
+  const usage = {
+    uncachedInputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    outputTokens: 0,
+    requests: 0,
+  }
+  const models = []
+  let cost = 0
+  let priced = true
+  let model = ''
+  let lastEventAt = 0
+  for (const fold of folds) {
+    usage.uncachedInputTokens += fold.usage.uncachedInputTokens
+    usage.cacheReadTokens += fold.usage.cacheReadTokens
+    usage.cacheWriteTokens += fold.usage.cacheWriteTokens
+    usage.outputTokens += fold.usage.outputTokens
+    usage.requests += fold.usage.requests
+    cost += fold.cost.cny
+    if (!fold.cost.priced) priced = false
+    for (const item of fold.models) if (!models.includes(item)) models.push(item)
+    if (fold.model !== '') model = fold.model
+    if (fold.lastEventAt > lastEventAt) lastEventAt = fold.lastEventAt
+  }
+  return {
+    title: root?.title ?? '',
+    model: model || root?.model || '',
+    models,
+    usage,
+    cost: { cny: cost, priced: priced && usage.requests > 0 },
+    sessions: folds.length,
+    subagentSessions: Math.max(0, folds.length - 1),
+    lastEventAt,
+  }
+}
+
 /** 人民币展示：与 macOS/Windows 卡片一致。 */
 export function formatCny(value) {
   if (!Number.isFinite(value) || value <= 0) return '0'
@@ -254,13 +303,17 @@ export function formatCny(value) {
 export function buildSessionCostSnapshot({
   sessionId,
   events,
+  extraSessions = [],
   source = 'recent',
   titleFallback = '',
   now = Date.now(),
   pricing = {},
   holidays = {},
 }) {
-  const folded = foldSessionEvents(events, { pricing, holidays })
+  const parts = [{ events, isRoot: true }].concat(
+    (Array.isArray(extraSessions) ? extraSessions : []).map((item) => ({ events: item?.events ?? [], isRoot: false })),
+  )
+  const folded = foldSessionParts(parts, { pricing, holidays })
   const peakNow = isPeak(beijingParts(new Date(now)), holidays)
   return {
     schema: 1,
@@ -276,6 +329,8 @@ export function buildSessionCostSnapshot({
       cacheWriteTokens: folded.usage.cacheWriteTokens,
       outputTokens: folded.usage.outputTokens,
       requests: folded.usage.requests,
+      sessions: folded.sessions,
+      subagentSessions: folded.subagentSessions,
     },
     cost: {
       cny: Number(folded.cost.cny.toFixed(6)),

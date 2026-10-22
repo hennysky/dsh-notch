@@ -16,14 +16,16 @@ token、按官方价目估算花了多少钱。
 
 ```
 DSH Web UI（会话页）
-  └─ 本插件的 client.js：注册一个不可见组件到 conversation.input.right
+  └─ 本插件的 client.js：注册一个不可见组件到 conversation.composer.dock
        │ 拿到 props.sessionId
        │ POST /api/notch/active-session {sessionId}
        ▼
 DSH Host 进程（本插件 index.js）
   ├─ 记住 activeSessionId（没有上报时退回「最近活跃会话」）
-  ├─ 读会话事件：assistant/message.usage + message.source.model + event.time
-  ├─ 按每条消息的时间/模型计价（高峰 / 空闲）
+  ├─ 用 sessionQuery.traceSession(sessionId) 递归找出所有后代会话
+  │    （子智能体 / 团队成员；fork/seed 会话跳过，避免继承事件重复计费）
+  ├─ 读整棵树的事件：assistant/message.usage + message.source.model + event.time
+  ├─ 按每条消息的时间/模型计价（高峰 / 空闲），累加成整棵树的花费
   └─ 原子写 ~/.dsh/notch/session-cost.json
        ▼
 DSHNotch.app / DSHNotch.exe
@@ -49,7 +51,9 @@ DSHNotch.app / DSHNotch.exe
     "cacheReadTokens": 980000,
     "cacheWriteTokens": 0,
     "outputTokens": 83000,
-    "requests": 12
+    "requests": 12,
+    "sessions": 3,
+    "subagentSessions": 2
   },
   "cost": {
     "cny": 0.42,
@@ -63,8 +67,10 @@ DSHNotch.app / DSHNotch.exe
 
 - `source`：`client`（UI 插件上报的当前会话）或 `recent`（最近活跃会话兜底）
 - `updatedAt`：毫秒时间戳；app 超过 24h 视为过期不显示
-- `usage` 是整会话累计；`cost.cny` 是整会话预估
-- `cost.priced`：false 表示会话里出现了未收录模型/非 DeepSeek provider，此时 app 只显示 token，不显示金额
+- `usage` 是**整棵会话树**累计：根会话 + 子智能体 / 团队成员的会话
+- `usage.sessions`：计入的会话数；`usage.subagentSessions`：其中子会话数
+- `cost.cny` 是整棵树预估；`cost.priced`：false 表示出现了未收录模型/非 DeepSeek provider，
+  此时 app 只显示 token，不显示金额
 
 ## 计价规则（与官方 2026-10 价目一致）
 
@@ -79,6 +85,9 @@ DSHNotch.app / DSHNotch.exe
 - **空闲时段价 = 高峰价 × 0.5**：北京时间周一至周五 9:00–12:00、14:00–18:00 之外，
   以及周末、法定节假日全天
 - 每条消息按它自己的 `event.time` 判断高峰/空闲，而不是按当前时间
+- **子智能体 / 团队成员的花费也算在当前窗口里**：按 `parentSession` 递归整棵会话树；
+  `isSeeded`（fork/seed 会话）整棵跳过，因为它们的日志包含从父会话继承的事件，重复
+  计入会让费用翻倍；单次最多统计 50 个后代会话
 - 模型别名：`deepseek-v4-flash*` → `deepseek-flash`
 - 未收录模型：只显示 token，不显示金额（宁可不显示也不报错价）
 
@@ -111,6 +120,7 @@ DSHNotch.app / DSHNotch.exe
 ## 验收
 
 - [ ] 单测：高峰/空闲/节假日判断、缓存写入并入未命中、模型别名、未收录模型、事件 fold、快照 JSON 形状
+- [ ] 单测：根 + 子智能体合并、会话计数、seeded/fork 子会话跳过、子会话未收录模型时整体不报价
 - [ ] 客户端组件 `client.js` 能通过语法检查；上报只在 sessionId 变化时触发
 - [ ] Host 路由：合法 POST 200 并写文件；非法 400；未知 session 404
 - [ ] 写文件原子性：临时文件 + rename，不留下半截 JSON

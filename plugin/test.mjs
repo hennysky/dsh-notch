@@ -55,6 +55,7 @@ import {
   beijingParts,
   costForUsage,
   foldSessionEvents,
+  foldSessionParts,
   formatCny,
   isPeak,
   normalizeModel,
@@ -1032,6 +1033,132 @@ check(
 )
 sessionCostCtx.unload()
 check('apply：卸载后监听摘除', sessionCostCtx.totalActive() === 0, `active=${sessionCostCtx.totalActive()}`)
+
+// 子智能体：根会话 + 后代会话要合并成一个「窗口」的花费
+const childEvents = [
+  {
+    type: 'assistant/message',
+    time: peakDate.getTime(),
+    data: {
+      message: { source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+      usage: { inputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 },
+    },
+  },
+]
+const combined = foldSessionParts([{ events: sessionEvents }, { events: childEvents }])
+check(
+  'foldSessionParts：根 + 子会话累加',
+  combined.usage.requests === 3 && combined.usage.uncachedInputTokens === 3_000_000 &&
+    Math.abs(combined.cost.cny - 13.04) < 1e-9,
+  JSON.stringify({ usage: combined.usage, cost: combined.cost }),
+)
+check('foldSessionParts：标题仍取根会话', combined.title === '修通知')
+check(
+  'foldSessionParts：会话计数',
+  combined.sessions === 2 && combined.subagentSessions === 1,
+  `${combined.sessions}/${combined.subagentSessions}`,
+)
+check(
+  'foldSessionParts：任一子会话未收录模型 → 整体不报价',
+  foldSessionParts([
+    { events: sessionEvents },
+    {
+      events: [
+        {
+          type: 'assistant/message',
+          time: peakDate.getTime(),
+          data: { message: { source: { provider: 'openai', model: 'x' } }, usage: { inputTokens: 1, outputTokens: 1 } },
+        },
+      ],
+    },
+  ]).cost.priced === false,
+)
+
+const treeSnapshot = buildSessionCostSnapshot({
+  sessionId: 'session-demo',
+  events: sessionEvents,
+  extraSessions: [{ sessionId: 'session-child', events: childEvents }],
+  source: 'client',
+  titleFallback: 'ws',
+  now: peakDate.getTime(),
+})
+check(
+  'snapshot：包含子智能体用量与计数',
+  treeSnapshot.usage.sessions === 2 && treeSnapshot.usage.subagentSessions === 1 &&
+    treeSnapshot.usage.requests === 3 && Math.abs(treeSnapshot.cost.cny - 13.04) < 1e-9,
+  JSON.stringify(treeSnapshot.usage),
+)
+
+// tracker：sessionQuery.traceSession 给出子会话时，费用一起算
+const treeWrites = []
+function makeTreeCtx({ seeded = false } = {}) {
+  return {
+    get(name) {
+      if (name === 'sessions') {
+        return {
+          get(id) {
+            if (id === 'session-demo') {
+              return { header: { id: 'session-demo', cwd: '/tmp/default-workspace' }, ownEvents: () => sessionEvents }
+            }
+            if (id === 'session-child') {
+              return { header: { id: 'session-child', isSeeded: seeded }, ownEvents: () => childEvents }
+            }
+            return undefined
+          },
+        }
+      }
+      if (name === 'sessionQuery') {
+        return {
+          async traceSession(id) {
+            if (id !== 'session-demo') return { descendants: [] }
+            return {
+              descendants: [
+                { session: { header: { id: 'session-child', isSeeded: seeded } }, descendants: [] },
+              ],
+            }
+          },
+        }
+      }
+      return undefined
+    },
+  }
+}
+const treeTracker = createSessionCostTracker(makeTreeCtx(), trackerSettings, {
+  log: () => {},
+  now: () => peakDate.getTime(),
+  debounceMs: 10_000,
+  write: async (file, snap) => {
+    treeWrites.push(snap)
+  },
+})
+treeTracker.setActive('session-demo')
+await treeTracker.flush()
+check(
+  'tracker：子智能体费用计入当前窗口',
+  treeWrites.length === 1 && treeWrites[0].usage.subagentSessions === 1 &&
+    treeWrites[0].usage.requests === 3 && Math.abs(treeWrites[0].cost.cny - 13.04) < 1e-9,
+  JSON.stringify(treeWrites[0]?.usage),
+)
+treeTracker.dispose()
+
+const seededWrites = []
+const seededTracker = createSessionCostTracker(makeTreeCtx({ seeded: true }), trackerSettings, {
+  log: () => {},
+  now: () => peakDate.getTime(),
+  debounceMs: 10_000,
+  write: async (file, snap) => {
+    seededWrites.push(snap)
+  },
+})
+seededTracker.setActive('session-demo')
+await seededTracker.flush()
+check(
+  'tracker：seeded（fork）子会话不重复计费',
+  seededWrites.length === 1 && seededWrites[0].usage.subagentSessions === 0 &&
+    seededWrites[0].usage.requests === 2,
+  JSON.stringify(seededWrites[0]?.usage),
+)
+seededTracker.dispose()
 
 // ─────────────────────────────────────────────────────────────
 // B. 原有进程级三态（会临时启动 / 收掉 DSHNotch.app）
