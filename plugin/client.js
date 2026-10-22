@@ -39,7 +39,7 @@ window.__ModuleLoader__.load({
       inject: ['slots'],
       apply(ctx) {
         // 会话作用域插槽：进入/切换会话时组件重新挂载，于是每次切换都会上报。
-        ctx.slots.inject('conversation.input.right', () =>
+        ctx.slots.inject('conversation.composer.dock', () =>
           ctx.slots.register(
             {
               name: 'conversation.input.right',
