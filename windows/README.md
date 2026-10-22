@@ -57,6 +57,7 @@ CI：`.github/workflows/windows-app.yml`，push/PR 到 `windows-app`、`main` �
 | 托盘 tooltip | `DSHNotch · 余额 ¥X · N 条未读通知`（无未读时省略后半段） |
 | 托盘图标红点 | 收到一条真正投递出去的通知后变红点；打开卡片清零 |
 | 点 toast 通知 | 通过 `dshnotch://open-dsh` 拉起本进程 `--open-dsh`，定位并激活/启动 DSH |
+| 卡片标题栏「日历」 | 切换到 Token 用量日历页；日历页左上「‹ 返回」回余额页 |
 | 卡片里的两个开关 | 「任务完成通知」「需要处理通知」，改动立即写入 `settings.json` |
 
 余额卡片显示：主钱包余额、赠送余额、今日消耗（本地推算）、累计消费、更新时间；
@@ -120,6 +121,44 @@ Get-Content "$env:USERPROFILE\.dsh\notch\session-cost.json"
 
 ---
 
+## Token 用量日历（v1.2.0+）
+
+卡片标题栏的「日历」按钮切到用量日历页：53 列 × 7 行热力格（周一开头），
+按天展示近 12 个月用了多少 token 或预估金额。数据同样由 DSH 插件写到本地，
+本应用**只读、不发网络请求**：
+
+```
+%USERPROFILE%\.dsh\notch\token-activity.json
+```
+
+数据契约（schema 1、371 天逐日补零、计价口径、插件侧回填）见仓库 `docs/token-activity.md`。
+
+页面内容：
+
+- 顶部「用量 / 金额」胶囊切换：**用量是紫色系、金额是绿色系**，一眼区分口径；
+- 自绘 53×7 热力格（不是几千个 Label）：颜色档位按「当天值 / 最大值」开方分 4 档，
+  0 表示当天没有数据；
+- 悬停色块：白框高亮，并在格下方显示「10月21日 · 1.24M tokens」或「10月21日 · ≈¥0.42」；
+- 下方月份标签（相邻太近时用更近的月份替换，避免重叠）；
+- 底部「近 12 个月合计」（token 用 1.24M / 13.46B 这类紧凑写法，金额 `≈¥12.34`）。
+
+读取与降级：
+
+- 打开卡片时读一次；卡片显示期间每 30 秒重读本地 JSON（无网络）；
+- 文件不存在、JSON 损坏、schema 不认识：显示「还没有用量数据」占位，
+  并提示「跑一次对话后，插件会按天生成」；
+- 插件首次启动会增量回填会话日志，可能跑几十秒——数据文件出现前显示占位即可；
+- 日期按**北京时间**切天；未来格子留空；
+- 金额是**预估**（与当前会话花费同一套官方价目），以平台账单为准。
+
+想验证本机文件长什么样：
+
+```powershell
+Get-Content "$env:USERPROFILE\.dsh\notch\token-activity.json"
+```
+
+---
+
 ## 设置
 
 `%APPDATA%\DSHNotch\settings.json`（首次保存时自动创建）：
@@ -173,7 +212,7 @@ Get-Content "$env:USERPROFILE\.dsh\notch\session-cost.json"
 
 ```bash
 curl -s 127.0.0.1:47810/health
-# {"ok":true,"app":"DSHNotch","version":"1.1.0","authorization":"authorized","unread":0}
+# {"ok":true,"app":"DSHNotch","version":"1.2.0","authorization":"authorized","unread":0}
 
 curl -s -X POST 127.0.0.1:47810/notify \
   -H 'content-type: application/json' \
@@ -251,11 +290,17 @@ curl -s -X POST 127.0.0.1:47810/notify \
 - [ ] 「当前会话」块在真实 DSH 会话语料上的显示效果与卡片高度（CI 只覆盖
       session-cost.json 的解析/校验/格式化与纯逻辑可见性，没有真实插件文件）；
 - [ ] 插件写入过程中读文件（原子 rename 的瞬间）是否会出现一次「区块闪烁/暂时隐藏」；
-- [ ] 极小金额（< ¥0.01）与超长会话标题在真实卡片里的观感。
+- [ ] 极小金额（< ¥0.01）与超长会话标题在真实卡片里的观感；
+- [ ] 用量日历页在真实 Windows 桌面上的观感：53×7 热力格、月份标签、悬停高亮/
+      详情行、高 DPI 下是否清晰（CI 只覆盖网格/档位/格式化/悬停文案的纯逻辑）；
+- [ ] 日历页与余额页切换时的窗口尺寸/位置跳动（代码会在切页时重新贴右下角，
+      但没有实机确认多显示器/任务栏位置不同的情况）；
+- [ ] 真实插件首次回填几十秒期间、以及原子 rename 瞬间读文件的占位/刷新表现。
 
 CI 实际验证的是：两个工程在 `windows-latest` 上编译通过；xUnit 全部通过
 （凭据解析、今日消耗、提醒规则、桥协议随机端口、toast XML 转义、设置读写、未读计数、
-托盘图标红色像素、session-cost 解析/过期/缺字段/未收录模型/格式化/卡片可见性）；
+托盘图标红色像素、session-cost 解析/过期/缺字段/未收录模型/格式化/卡片可见性、
+token-activity 解析/371 天补零/53×7 网格对齐/今天位置/未来格/档位/格式化/悬停文案/空数据）；
 AUMID 快捷方式与 HKCU 协议/自启注册表读写；Release 单文件
 self-contained 发布并打包成 artifact。
 
@@ -269,9 +314,11 @@ windows/
   src/DSHNotch/
     Program.cs                 入口、单实例、--open-dsh、异常兜底
     TrayApp.cs                 NotifyIcon/菜单/轮询/桥/未读红点
-    BalanceCardForm.cs         余额卡片（含「当前会话」区块）
+    BalanceCardForm.cs         余额卡片 + 用量日历页（标题栏切换）
     BalanceModel.cs            余额状态机（失败保留旧快照）
     SessionCost.cs             当前会话花费快照读取/校验/格式化（只读本地 JSON）
+    TokenActivity.cs           用量日历：快照解析 + 53×7 网格/档位/格式化（纯逻辑）
+    CalendarHeatmapControl.cs  自绘热力格 + 月份标签、用量/金额胶囊切换
     BalanceClient.cs           凭据 + HTTP + 响应解析
     Credentials.cs             .credentials.yaml 行级解析
     DailyCost.cs               今日消耗推算与落盘
