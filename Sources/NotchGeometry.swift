@@ -18,6 +18,16 @@ struct NotchGeometry {
     /// 统一高度省掉了「切页要改窗口尺寸」这一层状态。
     static let cardHeight: CGFloat = 224
 
+    /// 日历页把同一张卡片拉大：300×224 里 27 周的格子只有 8pt，放大才看得清。
+    static let calendarWidth: CGFloat = 460
+    static let calendarHeight: CGFloat = 340
+
+    static func cardSize(calendar: Bool) -> NSSize {
+        calendar
+            ? NSSize(width: calendarWidth, height: calendarHeight)
+            : NSSize(width: cardWidth, height: cardHeight)
+    }
+
     /// 折叠态窗口 = 刘海本身（左右各外扩 4pt）。
     /// 平时不画任何东西，刘海就是鼠标进入的触发区；外扩一点是为了
     /// ① 覆盖窗口对齐到 2x 像素网格时的 0.5pt 取整误差
@@ -25,11 +35,15 @@ struct NotchGeometry {
     var collapsedFrame: NSRect { notch.insetBy(dx: -4, dy: 0) }
 
     /// 展开态窗口：从屏幕顶端向下铺开，顶部与刘海连成一体，底部圆角。
-    var expandedFrame: NSRect {
-        NSRect(x: notch.midX - Self.cardWidth / 2,
-               y: screenTop - notch.height - Self.cardHeight,
-               width: Self.cardWidth,
-               height: notch.height + Self.cardHeight)
+    var expandedFrame: NSRect { expandedFrame(calendar: false) }
+
+    /// 日历页用更大的窗口；余额/设置页保持原尺寸。
+    func expandedFrame(calendar: Bool) -> NSRect {
+        let size = Self.cardSize(calendar: calendar)
+        return NSRect(x: notch.midX - size.width / 2,
+                      y: screenTop - notch.height - size.height,
+                      width: size.width,
+                      height: notch.height + size.height)
     }
 
     var chrome: CardChrome { .notch(topInset: notch.height) }

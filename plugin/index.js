@@ -1242,7 +1242,12 @@ export function createSessionCostTracker(
     /** 会话活动：没有 UI 上报时用它推断「最近活跃会话」。 */
     noteActivity(sessionId) {
       if (typeof sessionId !== 'string' || sessionId === '') return
-      if (activeSource === 'client' && activeSessionId !== sessionId) return
+      if (activeSource === 'client') {
+        // UI 已经明确上报了当前会话：同会话的活动只刷新数据，不能把来源降级成
+        // 「最近活跃」；其他会话的活动更不能把当前窗口抢走。
+        if (activeSessionId === sessionId) schedule()
+        return
+      }
       activeSessionId = sessionId
       activeSource = 'recent'
       schedule()

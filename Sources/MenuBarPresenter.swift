@@ -100,8 +100,14 @@ final class MenuBarPresenter: NSObject, BalancePresenting {
     private static var cardWidth: CGFloat { NotchGeometry.cardWidth }
     private static var cardHeight: CGFloat { NotchGeometry.cardHeight }
 
+    /// 日历页用更大的 popover；余额页保持原尺寸。
+    private var currentSize: NSSize { NotchGeometry.cardSize(calendar: state.showCalendar) }
+
     private func makeRootView() -> CardRootView {
-        CardRootView(model: model,
+        let size = currentSize
+        hosting?.view.frame = NSRect(origin: .zero, size: size)
+        popover?.contentSize = size
+        return CardRootView(model: model,
                      settings: settings,
                      chrome: .popover,
                      state: state,

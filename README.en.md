@@ -252,8 +252,8 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 
 ### Token activity calendar
 
-A calendar button in the card header opens a 6-month heatmap of daily token usage, or of
-estimated cost (tokens are purple, money is green). Hover a cell to see that day's exact
+A calendar button in the card header enlarges the same card to 460×340 and opens a 6-month
+heatmap of daily token usage, or of estimated cost (tokens are purple, money is green). Hover a cell to see that day's exact
 numbers.
 
 ![Token activity calendar](preview/calendar-tokens.png) The plugin aggregates session logs per day (first backfill may take tens of seconds,

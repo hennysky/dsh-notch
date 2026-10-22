@@ -171,7 +171,7 @@ final class NotchPresenter: BalancePresenting {
         host.onNotchBandClick = { [weak self] in self?.toggle() }
         panel.contentView = host
 
-        panel.setFrame(state.isExpanded ? geometry.expandedFrame : geometry.collapsedFrame, display: true)
+        panel.setFrame(state.isExpanded ? geometry.expandedFrame(calendar: state.showCalendar) : geometry.collapsedFrame, display: true)
         panel.orderFrontRegardless()
 
         self.panel = panel
@@ -247,7 +247,7 @@ final class NotchPresenter: BalancePresenting {
 
         guard let panel, let geometry else { return }
         animate(panel: panel,
-                to: expanded ? geometry.expandedFrame : geometry.collapsedFrame,
+                to: expanded ? geometry.expandedFrame(calendar: state.showCalendar) : geometry.collapsedFrame,
                 duration: settings.animationDuration,
                 completion: { [weak self] in
                     guard let self, self.model.isExpanded == expanded else { return }
@@ -268,12 +268,21 @@ final class NotchPresenter: BalancePresenting {
         if state.showCalendar { state.showSettings = false }
         dshLog("用量日历 \(state.showCalendar ? "打开" : "关闭")（刘海）")
         refreshContent()
+        resizeForCurrentMode()
     }
 
     func selectMetric(_ metric: ActivityMetric) {
         state.calendarMetric = metric
         dshLog("用量日历口径：\(metric.label)（刘海）")
         refreshContent()
+    }
+
+    /// 日历页/余额页窗口尺寸不同：切页时把窗口补间到新尺寸。
+    private func resizeForCurrentMode() {
+        guard let panel, let geometry, model.isExpanded else { return }
+        animate(panel: panel,
+                to: geometry.expandedFrame(calendar: state.showCalendar),
+                duration: settings.animationDuration)
     }
 
     func toggleSettings() {

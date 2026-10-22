@@ -973,6 +973,12 @@ check(
     writtenSnapshots[0].snap.source === 'client',
   JSON.stringify(writtenSnapshots.map((item) => item.snap?.source)),
 )
+tracker.noteActivity('session-demo')
+check(
+  'tracker：client 来源不被同会话活动降级',
+  tracker.active.source === 'client',
+  JSON.stringify(tracker.active),
+)
 tracker.noteActivity('session-other')
 check('tracker：client 上报后不被其他会话活动抢走', tracker.active.sessionId === 'session-demo', JSON.stringify(tracker.active))
 tracker.dispose()

@@ -185,9 +185,9 @@ func runRenderCheck() -> Int32 {
         : nil
 
     let chrome: CardChrome = menuBarStyle ? .popover : .notch(topInset: 32)
-    let size = NSSize(width: NotchGeometry.cardWidth,
-                      height: menuBarStyle ? NotchGeometry.cardHeight
-                                           : 32 + NotchGeometry.cardHeight)
+    let cardSize = NotchGeometry.cardSize(calendar: isCalendar)
+    let size = NSSize(width: cardSize.width,
+                      height: menuBarStyle ? cardSize.height : 32 + cardSize.height)
 
     let view = CardRootView(model: model, settings: settings, chrome: chrome,
                             state: state, actions: CardActions())

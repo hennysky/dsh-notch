@@ -306,8 +306,8 @@ struct BalanceCard: View {
                 metricToggle
                 Spacer(minLength: 0)
                 Text("近 6 个月")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.white.opacity(0.35))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.38))
             }
             .padding(.top, 8)
 
@@ -317,10 +317,10 @@ struct BalanceCard: View {
 
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(activityTotalText(activity))
-                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                        .font(.system(size: 27, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.95))
                     Text(state.calendarMetric == .tokens ? "tokens · 近 6 个月" : "· 近 6 个月")
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.35))
                     Spacer(minLength: 4)
                     activityLegend
@@ -346,12 +346,12 @@ struct BalanceCard: View {
                     actions.selectMetric(metric)
                 } label: {
                     Text(metric.label)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(metric == state.calendarMetric
                                          ? Color.black.opacity(0.85)
                                          : Color.white.opacity(0.55))
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 5)
                         .background(Capsule().fill(metric == state.calendarMetric
                                                    ? Color.white.opacity(0.88)
                                                    : Color.clear))
@@ -713,8 +713,8 @@ private struct CalendarHeatmapView: View {
 
     @State private var hovered: HoveredCell?
 
-    private let cellSize: CGFloat = 8.4
-    private let gap: CGFloat = 1.4
+    private let cellSize: CGFloat = 14.5
+    private let gap: CGFloat = 1.3
     private var pitch: CGFloat { cellSize + gap }
     private var gridWidth: CGFloat { CGFloat(ActivityCalendar.weeks) * pitch - gap }
     private var gridHeight: CGFloat { CGFloat(ActivityCalendar.daysPerWeek) * pitch - gap }
@@ -770,22 +770,22 @@ private struct CalendarHeatmapView: View {
 
             ForEach(calendar.monthLabels) { label in
                 Text(label.label)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.38))
-                    .offset(x: CGFloat(label.column) * pitch, y: gridHeight + 4)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.40))
+                    .offset(x: CGFloat(label.column) * pitch, y: gridHeight + 6)
             }
 
             // 悬停详情放在色块下方固定一行：卡片太小，浮层气泡会盖住数字。
             Text(hovered.map { TokenActivityCalendar.hoverText(for: $0.cell, metric: metric) }
                  ?? "悬停色块查看每天")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.white.opacity(hovered == nil ? 0.30 : 0.92))
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(.white.opacity(hovered == nil ? 0.32 : 0.95))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: gridWidth, alignment: .leading)
-                .offset(y: gridHeight + 22)
+                .offset(y: gridHeight + 30)
         }
-        .frame(width: gridWidth, height: gridHeight + 38, alignment: .topLeading)
+        .frame(width: gridWidth, height: gridHeight + 52, alignment: .topLeading)
     }
 }
 
