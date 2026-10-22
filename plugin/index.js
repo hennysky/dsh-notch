@@ -1349,15 +1349,18 @@ function registerTokenActivity(ctx, settings) {
     )
     return () => {
       if (typeof detach === 'function') detach()
+      clearTimeout(backfillTimer)
       tracker.dispose()
       void tracker.persist({ immediate: true })
     }
   }, 'notch-balance.tokenActivity')
 
-  // 回填在后台跑，不阻塞 DSH 启动；失败只记日志。
-  void tracker.backfill().catch((error) => {
-    log(`用量日历：回填失败（${describeError(error)}）`)
-  })
+  // 回填在后台跑，不阻塞 DSH 启动；先让启动路径跑完再扫历史，失败只记日志。
+  const backfillTimer = setTimeout(() => {
+    void tracker.backfill().catch((error) => {
+      log(`用量日历：回填失败（${describeError(error)}）`)
+    })
+  }, 3000)
 
   // 诊断端点：排查「插件是否拿到 sessionQuery / 扫到多少会话 / 回填了多少」。
   // 只读本地状态，不返回会话内容。
