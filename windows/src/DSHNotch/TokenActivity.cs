@@ -203,10 +203,10 @@ public sealed class MonthLabel
     public string Label { get; }
 }
 
-/// <summary>27 列 × 7 行（近 6 个月，周一开头、最后一列包含今天）的日历网格。</summary>
+/// <summary>13 列 × 7 行（近 3 个月，周一开头、最后一列包含今天）的日历网格。</summary>
 public sealed class ActivityCalendar
 {
-    public const int Weeks = 27;
+    public const int Weeks = 13;
     public const int DaysPerWeek = 7;
 
     public ActivityCalendar(IReadOnlyList<IReadOnlyList<ActivityCell?>> columns, IReadOnlyList<MonthLabel> monthLabels)
@@ -419,7 +419,7 @@ public static class TokenActivityCalendar
         return DayLabel(cell.Date) + " · " + cell.Text(metric);
     }
 
-    /// <summary>近 6 个月合计文案。</summary>
+    /// <summary>近 3 个月合计文案。</summary>
     public static string TotalText(IEnumerable<ActivityDay> days, ActivityMetric metric)
     {
         long tokens = 0;

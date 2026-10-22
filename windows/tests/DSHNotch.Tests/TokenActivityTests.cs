@@ -172,7 +172,7 @@ public sealed class TokenActivityTests
     }
 
     [Fact]
-    public void Build_Has53ColumnsAnd7Rows()
+    public void Build_Has13ColumnsAnd7Rows()
     {
         var calendar = TokenActivityCalendar.Build(BuildDays(Today), Today);
 
@@ -220,7 +220,7 @@ public sealed class TokenActivityTests
     }
 
     [Fact]
-    public void Build_GridStartAndCellCountMatch53Weeks()
+    public void Build_GridStartAndCellCountMatch13Weeks()
     {
         var calendar = TokenActivityCalendar.Build(BuildDays(Today), Today);
 
@@ -390,7 +390,7 @@ public sealed class TokenActivityTests
             new() { Date = "2026-10-22", Tokens = 83_000, Cost = 0.01m },
         };
 
-        Assert.Equal("1.32M tokens", TokenActivityCalendar.TotalText(days, ActivityMetric.Tokens));
+        Assert.Equal("132万 tokens", TokenActivityCalendar.TotalText(days, ActivityMetric.Tokens));
         Assert.Equal("≈¥0.43", TokenActivityCalendar.TotalText(days, ActivityMetric.Money));
     }
 
@@ -416,7 +416,7 @@ public sealed class TokenActivityTests
 
         Assert.True(tokens.HasData);
         Assert.True(money.HasData);
-        Assert.Equal("1.32M tokens", tokens.TotalText);
+        Assert.Equal("132万 tokens", tokens.TotalText);
         Assert.Equal("≈¥0.43", money.TotalText);
     }
 

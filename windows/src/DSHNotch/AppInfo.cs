@@ -4,7 +4,7 @@ namespace DSHNotch;
 public static class AppInfo
 {
     public const string AppName = "DSHNotch";
-    public const string Version = "1.2.1";
+    public const string Version = "1.2.2";
     /// <summary>非打包桌面应用的 Application User Model ID，必须与开始菜单快捷方式里写的一致。</summary>
     public const string Aumid = "DSHNotch.Desktop";
     public const string ProtocolScheme = "dshnotch";
