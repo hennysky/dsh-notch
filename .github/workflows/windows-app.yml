@@ -88,3 +88,26 @@ jobs:
           name: DSHNotch-win-x64-folder
           path: DSHNotch-win-x64-folder.zip
           retention-days: 14
+
+      # 用户真正应该下载的东西：安装包。双击 → 下一步 → 直接启动，
+      # 不需要解压 zip，也不会再遇到「是否解压缩此文件」。
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows/installer/DSHNotch.iss'
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSHNotch-Setup
+          path: dist-installer/DSHNotch-Setup-*.exe
+          retention-days: 14
+
+      # 便携版：单个 exe 直接下载就能跑（不需要 zip），给不想安装的用户。
+      - name: Upload portable exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSHNotch-portable
+          path: publish/DSHNotch.exe
+          retention-days: 14
