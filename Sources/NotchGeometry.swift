@@ -18,9 +18,9 @@ struct NotchGeometry {
     /// 统一高度省掉了「切页要改窗口尺寸」这一层状态。
     static let cardHeight: CGFloat = 224
 
-    /// 日历页把同一张卡片拉大：300×224 里 27 周的格子只有 8pt，放大才看得清。
-    static let calendarWidth: CGFloat = 460
-    static let calendarHeight: CGFloat = 340
+    /// 日历页把同一张卡片拉大：300×224 里 13 周的格子只有几 pt，放大才看得清。
+    static let calendarWidth: CGFloat = 380
+    static let calendarHeight: CGFloat = 390
 
     static func cardSize(calendar: Bool) -> NSSize {
         calendar

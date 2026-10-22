@@ -252,7 +252,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 
 ### Token activity calendar
 
-A calendar button in the card header enlarges the same card to 460×340 and opens a 6-month
+A calendar button in the card header enlarges the same card to 380×390 and opens a 3-month
 heatmap of daily token usage, or of estimated cost (tokens are purple, money is green). Hover a cell to see that day's exact
 numbers.
 

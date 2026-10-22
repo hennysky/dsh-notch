@@ -305,7 +305,7 @@ struct BalanceCard: View {
             HStack(spacing: 6) {
                 metricToggle
                 Spacer(minLength: 0)
-                Text("近 6 个月")
+                Text("近 3 个月")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.38))
             }
@@ -313,13 +313,14 @@ struct BalanceCard: View {
 
             if let activity = model.activity, !activity.days.isEmpty {
                 CalendarHeatmapView(activity: activity, metric: state.calendarMetric)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 8)
 
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(activityTotalText(activity))
                         .font(.system(size: 27, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.95))
-                    Text(state.calendarMetric == .tokens ? "tokens · 近 6 个月" : "· 近 6 个月")
+                    Text(state.calendarMetric == .tokens ? "tokens · 近 3 个月" : "· 近 3 个月")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.35))
                     Spacer(minLength: 4)
@@ -713,8 +714,8 @@ private struct CalendarHeatmapView: View {
 
     @State private var hovered: HoveredCell?
 
-    private let cellSize: CGFloat = 14.5
-    private let gap: CGFloat = 1.3
+    private let cellSize: CGFloat = 21.5
+    private let gap: CGFloat = 1.5
     private var pitch: CGFloat { cellSize + gap }
     private var gridWidth: CGFloat { CGFloat(ActivityCalendar.weeks) * pitch - gap }
     private var gridHeight: CGFloat { CGFloat(ActivityCalendar.daysPerWeek) * pitch - gap }
@@ -770,22 +771,22 @@ private struct CalendarHeatmapView: View {
 
             ForEach(calendar.monthLabels) { label in
                 Text(label.label)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.40))
-                    .offset(x: CGFloat(label.column) * pitch, y: gridHeight + 6)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.42))
+                    .offset(x: CGFloat(label.column) * pitch, y: gridHeight + 8)
             }
 
             // 悬停详情放在色块下方固定一行：卡片太小，浮层气泡会盖住数字。
             Text(hovered.map { TokenActivityCalendar.hoverText(for: $0.cell, metric: metric) }
                  ?? "悬停色块查看每天")
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(.white.opacity(hovered == nil ? 0.32 : 0.95))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: gridWidth, alignment: .leading)
-                .offset(y: gridHeight + 30)
+                .offset(y: gridHeight + 36)
         }
-        .frame(width: gridWidth, height: gridHeight + 52, alignment: .topLeading)
+        .frame(width: gridWidth, height: gridHeight + 58, alignment: .topLeading)
     }
 }
 
