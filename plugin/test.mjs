@@ -1336,6 +1336,33 @@ check(
 )
 activityTracker.dispose()
 
+// 回填期间到达的实时事件：结束后应只算一次（重读会话替换式重算）
+let releaseBackfill
+const backfillGate = new Promise((resolve) => { releaseBackfill = resolve })
+const pendingWrites = []
+const pendingTracker = new TokenActivityTracker(activityCtx, activitySettings, {
+  now: () => peakDate.getTime(),
+  log: () => {},
+  scanFiles: async () => new Map([['session-pending', { file: '/tmp/p', mtime: 1 }]]),
+  readSession: async () => {
+    await backfillGate
+    return { events: [activityEvents[0]], inheritedEventCount: 0 }
+  },
+  save: async (file, value) => { pendingWrites.push({ file, value }) },
+  debounceMs: 10_000,
+})
+const backfillPromise = pendingTracker.backfill()
+pendingTracker.noteEvent({ header: { id: 'session-pending' } }, activityEvents[0])
+releaseBackfill()
+await backfillPromise
+const pendingSnapshot = pendingWrites.filter((item) => item.file === '/tmp/token-activity-test.json').at(-1)
+check(
+  'activity tracker：回填期间实时事件不重复计费',
+  pendingSnapshot?.value?.days?.at(-1)?.tokens === 1_000_000,
+  JSON.stringify(pendingSnapshot?.value?.days?.at(-1)),
+)
+pendingTracker.dispose()
+
 // ─────────────────────────────────────────────────────────────
 // B. 原有进程级三态（会临时启动 / 收掉 DSHNotch.app）
 // ─────────────────────────────────────────────────────────────

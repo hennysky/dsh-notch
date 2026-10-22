@@ -209,21 +209,44 @@ export class TokenActivityTracker {
     this.disposed = false
     this.started = false
     this.backfilling = false
-    /** 回填期间到达的实时事件先缓存，回填结束后再合并，避免被「替换式重算」覆盖。 */
+    /** 回填期间到达的实时事件先按会话缓存；回填结束后重读该会话，避免重复/遗漏。 */
     this.pendingLive = {}
   }
 
-  #mergePendingLive() {
-    for (const [sessionId, days] of Object.entries(this.pendingLive)) {
+  /**
+   * 回填结束后处理期间到达的实时事件：
+   * - 优先重读会话（文件里通常已经包含这些事件），用「替换式重算」保证不重复；
+   * - 重读失败才把缓冲的事件折叠进去（尽力而为）。
+   */
+  async #replayPendingLive(readOne) {
+    const pending = this.pendingLive
+    this.pendingLive = {}
+    for (const [sessionId, events] of Object.entries(pending)) {
+      if (readOne !== null) {
+        try {
+          const result = await readOne(sessionId)
+          const list = Array.isArray(result?.events) ? result.events : []
+          const inherited = Number(result?.inheritedEventCount) || 0
+          const entry = this.cache.sessions[sessionId] ?? (this.cache.sessions[sessionId] = { mtime: 0, days: {} })
+          entry.days = foldActivity(list, {
+            inheritedEventCount: inherited,
+            pricing: this.pricing,
+            holidays: this.holidays,
+          })
+          continue
+        } catch {
+          // 重读失败：退回折叠缓冲事件
+        }
+      }
       const entry = this.cache.sessions[sessionId] ?? (this.cache.sessions[sessionId] = { mtime: 0, days: {} })
       if (entry.days === null || typeof entry.days !== 'object') entry.days = {}
-      for (const [day, value] of Object.entries(days)) {
+      const folded = foldActivity(events, { pricing: this.pricing, holidays: this.holidays })
+      for (const [day, value] of Object.entries(folded)) {
         const bucket = entry.days[day] ?? (entry.days[day] = emptyDay())
-        bucket.tokens += Number(value.tokens ?? 0)
-        bucket.cost += Number(value.cost ?? 0)
+        bucket.tokens += value.tokens
+        bucket.cost += value.cost
       }
     }
-    this.pendingLive = {}
   }
 
   get pricing() {
@@ -290,7 +313,7 @@ export class TokenActivityTracker {
     if (readOne === null) {
       this.log('用量日历：没有 sessionQuery.readSession，跳过历史回填')
       this.backfilling = false
-      this.#mergePendingLive()
+      await this.#replayPendingLive(null)
       await this.persist({ immediate: true })
       return
     }
@@ -316,7 +339,7 @@ export class TokenActivityTracker {
       await Promise.all(Array.from({ length: Math.min(this.concurrency, Math.max(1, dirty.length)) }, worker))
     } finally {
       this.backfilling = false
-      this.#mergePendingLive()
+      await this.#replayPendingLive(readOne)
       this.cache.updatedAt = this.now()
       await this.persist({ immediate: true })
     }
@@ -327,18 +350,14 @@ export class TokenActivityTracker {
     if (this.disposed || event === null || typeof event !== 'object' || event.type !== 'assistant/message') return
     const sessionId = session?.header?.id ?? session?.id
     if (typeof sessionId !== 'string' || sessionId === '') return
-    // 回填完成前先记到 pendingLive，避免与「替换式重算」互相覆盖
-    const delta = {}
-    if (!recordMessage(delta, event, { pricing: this.pricing, holidays: this.holidays })) return
+    // 回填完成前先按事件缓存，回填结束后靠重读会话统一算，避免与「替换式重算」互相覆盖
     if (this.backfilling) {
-      const bucket = this.pendingLive[sessionId] ?? (this.pendingLive[sessionId] = {})
-      for (const [day, value] of Object.entries(delta)) {
-        const target = bucket[day] ?? (bucket[day] = emptyDay())
-        target.tokens += value.tokens
-        target.cost += value.cost
-      }
+      const events = this.pendingLive[sessionId] ?? (this.pendingLive[sessionId] = [])
+      events.push(event)
       return
     }
+    const delta = {}
+    if (!recordMessage(delta, event, { pricing: this.pricing, holidays: this.holidays })) return
     const entry = this.cache.sessions[sessionId] ?? (this.cache.sessions[sessionId] = { mtime: 0, days: {} })
     if (entry.days === null || typeof entry.days !== 'object') entry.days = {}
     for (const [day, value] of Object.entries(delta)) {
