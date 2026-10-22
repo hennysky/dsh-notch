@@ -22,7 +22,7 @@
   横幅会消失，但菜单栏图标上的**红点不会**——直到你点开卡片。
 - **跟着 DSH 启动**：装一个配套插件，DSH 启动时自动拉起，并负责把会话事件转成通知。
 
-> 状态：v1.5（Windows 1.1.0 / 插件 1.4.0）· MIT · macOS 14+ · Apple Silicon ｜ 12 项零人工自检、插件测试与真实通知投递均已实测
+> 状态：v1.6（Windows 1.2.0 / 插件 1.6.0）· MIT · macOS 14+ · Apple Silicon ｜ 12 项零人工自检、插件测试与真实通知投递均已实测
 
 ---
 
@@ -66,7 +66,7 @@ DSHNotch 解决这两件事：把余额搬到刘海／菜单栏，并在额度�
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.6/DSHNotch-1.5.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.7/DSHNotch-1.6.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -249,7 +249,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 
 ### 当前会话花费
 
-装插件（1.4.0+）后，卡片会多一块「当前会话」：你正在看的那个 DSH 会话用了多少 token、
+装插件（1.4.0+，当前 1.6.0）后，卡片会多一块「当前会话」：你正在看的那个 DSH 会话用了多少 token、
 按官方价目估算花了多少钱（如 `≈¥0.42`，标注预估、以平台账单为准）。
 
 - token 来自 DSH 会话日志，是精确值；金额是按官方高峰/空闲单价折算的估算
@@ -289,7 +289,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 2. **通知桥**（v1.1.0+）：把 DSH 的任务结束 / 审批 / 提问事件 POST 给 DSHNotch，
    变成 macOS 系统通知（见上面「DSH 通知」）。
 
-> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.0.1.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.6/DSHNotch-Setup-1.1.0.exe) 双击安装即可（装到
+> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.0.1.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7/DSHNotch-Setup-1.2.0.exe) 双击安装即可（装到
 > `%LOCALAPPDATA%\Programs\DSHNotch`，不需要解压或命令行）；插件（v1.3.0+）会自动探测并拉起它。
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
 > 源码在 [`windows/`](windows/)，见 [plugin/README.md](plugin/README.md)。
