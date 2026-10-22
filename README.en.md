@@ -21,7 +21,7 @@ Three things:
 - **DSH notifications**: macOS notifications when a task finishes, fails, or the agent stops for your approval or answer. Click to switch back to DSH; the banner disappears, but the **red dot on the menu bar does not** — until you open the card.
 - **Starts with DSH**: one companion plugin launches it with DSH and bridges session events into notifications.
 
-> Status: v1.6.4 (Windows 1.2.1 / plugin 1.6.1) · MIT · macOS 14+ · Apple Silicon — 12 human-free self-checks, plugin tests and real notification delivery all verified.
+> Status: v1.6.5 (Windows 1.2.1 / plugin 1.6.1) · MIT · macOS 14+ · Apple Silicon — 12 human-free self-checks, plugin tests and real notification delivery all verified.
 
 ---
 
@@ -69,7 +69,7 @@ The packages on both platforms are byte-for-byte identical. Either one works.
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.7.3/DSHNotch-1.6.4.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.7.4/DSHNotch-1.6.5.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
