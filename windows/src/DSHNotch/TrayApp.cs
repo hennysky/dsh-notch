@@ -101,6 +101,28 @@ public sealed class TrayApp : ApplicationContext
         AppLog.Write(_bridge.IsListening
             ? $"托盘已启动（桥端口 {_bridge.Port}）"
             : "托盘已启动（通知桥未启动，余额功能不受影响）");
+
+        // 首次启动给一个气泡提示：本应用没有主窗口，图标又可能收在「^」里，
+        // 不给提示的话「双击没反应」是用户最自然的判断。
+        if (!_settings.Current.TrayIntroShown)
+        {
+            try
+            {
+                _tray.ShowBalloonTip(
+                    6000,
+                    AppInfo.AppName,
+                    "已在系统托盘运行：左键看余额，右键更多（图标可能收在「^」里）",
+                    ToolTipIcon.Info);
+                var next = _settings.Current.Clone();
+                next.TrayIntroShown = true;
+                _settings.Save(next);
+                AppLog.Write("已显示首次启动提示");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("首次启动提示失败（不影响运行）", ex);
+            }
+        }
     }
 
     private void OnTrayMouseClick(object? sender, MouseEventArgs e)

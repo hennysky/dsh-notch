@@ -17,6 +17,9 @@ public sealed class Settings
     /// <summary>开机自启（与 HKCU Run 同步）。</summary>
     public bool LaunchAtLogin { get; set; }
 
+    /// <summary>是否已经显示过「已在托盘运行」的首次提示（只提示一次）。</summary>
+    public bool TrayIntroShown { get; set; }
+
     /// <summary>余额低于该值（元）时提醒；0 = 关闭。</summary>
     public double LowBalanceThreshold { get; set; } = 10;
 
