@@ -291,6 +291,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 
 > **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.2.2.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-Setup-1.2.2.exe) 双击安装即可（装到
 > `%LOCALAPPDATA%\Programs\DSHNotch`，不需要解压或命令行）；插件（v1.3.0+）会自动探测并拉起它。
+> Gitee 发行版同样提供 Windows 安装包：https://gitee.com/hennysky/dsh-notch/releases/tag/v1.7.5
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
 > 源码在 [`windows/`](windows/)，见 [plugin/README.md](plugin/README.md)。
 

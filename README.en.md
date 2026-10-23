@@ -306,7 +306,9 @@ instead of launching it by hand.
 
 > **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.2.2.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-Setup-1.2.2.exe) — it installs
 > into `%LOCALAPPDATA%\Programs\DSHNotch` with a Start Menu shortcut (no unzip, no command line);
-> the plugin (v1.3.0+) detects and launches it. Without the tray app it falls back to DeepSeek
+> the plugin (v1.3.0+) detects and launches it. The Gitee release also carries the Windows
+> installer: https://gitee.com/hennysky/dsh-notch/releases/tag/v1.7.5
+> Without the tray app it falls back to DeepSeek
 > Harness's own Electron notifications, then to a PowerShell toast. Source lives in
 > [`windows/`](windows/); see [plugin/README.md](plugin/README.md).
 
