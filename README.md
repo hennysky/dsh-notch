@@ -75,7 +75,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 ```bash
 # Gitee
 curl -fL -o /tmp/DSHNotch.zip \
-  https://gitee.com/hennysky/dsh-notch/releases/download/v1.4/DSHNotch-1.4.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-1.6.5.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -83,7 +83,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 
 ### 手动安装
 
-1. 下载 `DSHNotch-1.4.zip`
+1. 下载 `DSHNotch-1.6.5.zip`
 2. 解压，把 `DSHNotch.app` 拖进「应用程序」
 3. **首次打开必须右键 → 打开**（原因见下）
 
@@ -199,7 +199,7 @@ xattr -dr com.apple.quarantine /Applications/DSHNotch.app
 ### DSH 通知（v1.4）
 
 DSH 桌面端本身没有任何系统通知：任务跑完了、或 agent 停下来等你审批，人不在窗口前就
-完全不知道。装上配套插件（[`plugin/`](plugin/)，v1.1.0+）后，这些事件由 DSHNotch 变成
+完全不知道。装上配套插件（[`plugin/`](plugin/)，v1.6.1+）后，这些事件由 DSHNotch 变成
 macOS 通知：
 
 | 什么时候 | 通知 |
@@ -249,7 +249,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 
 ### 当前会话花费
 
-装插件（1.4.0+，当前 1.6.0）后，卡片会多一块「当前会话」：你正在看的那个 DSH 会话用了多少 token、
+装插件（1.6.1+）后，卡片会多一块「当前会话」：你正在看的那个 DSH 会话用了多少 token、
 按官方价目估算花了多少钱（如 `≈¥0.42`，标注预估、以平台账单为准）。
 
 - token 来自 DSH 会话日志，是精确值；金额是按官方高峰/空闲单价折算的估算
@@ -289,7 +289,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 2. **通知桥**（v1.1.0+）：把 DSH 的任务结束 / 审批 / 提问事件 POST 给 DSHNotch，
    变成 macOS 系统通知（见上面「DSH 通知」）。
 
-> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.0.1.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-Setup-1.2.2.exe) 双击安装即可（装到
+> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.2.2.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-Setup-1.2.2.exe) 双击安装即可（装到
 > `%LOCALAPPDATA%\Programs\DSHNotch`，不需要解压或命令行）；插件（v1.3.0+）会自动探测并拉起它。
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
 > 源码在 [`windows/`](windows/)，见 [plugin/README.md](plugin/README.md)。

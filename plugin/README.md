@@ -294,5 +294,5 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
 ## 版本
 
-本插件与 DSHNotch 一起发布，版本号独立。当前 `1.1.0`，配套 DSHNotch 1.4+（通知桥）。
+本插件与 DSHNotch 一起发布，版本号独立。当前 `1.6.1`，配套 DSHNotch 1.6+（通知桥 / 会话花费 / 用量日历）。
 `1.0.x` 只负责拉起应用，没有通知功能。
