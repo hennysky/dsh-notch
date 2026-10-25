@@ -63,6 +63,6 @@ DSH 没有「每日用量」接口，但每个会话日志里都有 `assistant/m
 
 - [ ] 单测：按北京时间归日、token/金额累加、inherited 事件跳过、快照 371 天补零、跨会话合并
 - [ ] tracker 单测：回填两个会话、按会话缓存、实时消息累加
-- [ ] macOS `--calendarcheck`：53×7 网格、今天位置、未来格子为空、档位/颜色/文案
+- [ ] macOS `--calendarcheck`：13×7 网格、今天位置、未来格子为空、档位/颜色/文案
 - [ ] macOS `--render-calendar` / `--render-calendar-money` 离屏渲染两种口径
 - [ ] Windows 单测解析快照 + 日历网格（见 Windows README）
