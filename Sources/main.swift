@@ -1276,7 +1276,6 @@ if CommandLine.arguments.contains("--calendarcheck") {
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)  // 不占 Dock、不抢菜单栏
-
     let coordinator = AppCoordinator()
     appCoordinator = coordinator
 
