@@ -87,6 +87,10 @@ final class NotchSettings: ObservableObject {
     }
 
     init() {
+        // 2026-10：为了绕开 macOS 通知图标缓存，bundle id 从 local.dsh.notch 换成了
+        // local.dsh.dshnotch。把旧域里的设置迁移过来，用户不用重新调一遍。
+        Self.migrateLegacyDefaults()
+
         let defaults = UserDefaults.standard
 
         animationDuration = Self.stored(defaults, Key.duration,
@@ -106,6 +110,18 @@ final class NotchSettings: ObservableObject {
         // 默认关掉等于新功能不存在。
         notifyTaskDone = defaults.object(forKey: Key.notifyTaskDone) as? Bool ?? true
         notifyAttention = defaults.object(forKey: Key.notifyAttention) as? Bool ?? true
+    }
+
+    /// 旧 bundle id 的 UserDefaults 迁移到当前域；只迁移 dshNotch.* 前缀的键。
+    private static func migrateLegacyDefaults() {
+        let legacyIdentifier = "local.dsh.notch"
+        guard let legacy = UserDefaults(suiteName: legacyIdentifier) else { return }
+        let current = UserDefaults.standard
+        for (key, value) in legacy.dictionaryRepresentation() where key.hasPrefix("dshNotch.") {
+            if current.object(forKey: key) == nil {
+                current.set(value, forKey: key)
+            }
+        }
     }
 
     private static func stored(_ defaults: UserDefaults, _ key: String,
