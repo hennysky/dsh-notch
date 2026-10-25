@@ -218,6 +218,7 @@ notifications from DSHNotch:
 | The agent waits for approval | "需要你确认" with the tool name and reason |
 | The agent asks a question | "需要你回答" with the question text |
 
+- The notification icon is the **DeepSeek whale** (1.6.9+; the first launch after upgrading asks for notification permission again)
 - **Clicking a notification switches back to DeepSeek Harness** (launching it if it is not running)
 - **Banners disappear, the red dot does not**: a new notification puts a red dot on the menu bar
   icon (in menu bar mode, after the amount as `●`) and it stays until you open the card or click
