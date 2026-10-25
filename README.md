@@ -22,7 +22,7 @@
   横幅会消失，但菜单栏图标上的**红点不会**——直到你点开卡片。
 - **跟着 DSH 启动**：装一个配套插件，DSH 启动时自动拉起，并负责把会话事件转成通知。
 
-> 状态：v1.6.5（Windows 1.2.2 / 插件 1.6.1）· MIT · macOS 14+ · Apple Silicon ｜ 12 项零人工自检、插件测试与真实通知投递均已实测
+> 状态：v1.6.7（Windows 1.2.3 / 插件 1.6.1）· MIT · macOS 14+ · Apple Silicon ｜ 12 项零人工自检、插件测试与真实通知投递均已实测
 
 ---
 
@@ -66,7 +66,7 @@ DSHNotch 解决这两件事：把余额搬到刘海／菜单栏，并在额度�
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-1.6.5.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.7.6/DSHNotch-1.6.7.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -75,7 +75,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 ```bash
 # Gitee
 curl -fL -o /tmp/DSHNotch.zip \
-  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-1.6.5.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.6/DSHNotch-1.6.7.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -83,7 +83,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 
 ### 手动安装
 
-1. 下载 `DSHNotch-1.6.5.zip`
+1. 下载 `DSHNotch-1.6.7.zip`
 2. 解压，把 `DSHNotch.app` 拖进「应用程序」
 3. **首次打开必须右键 → 打开**（原因见下）
 
@@ -289,7 +289,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 2. **通知桥**（v1.1.0+）：把 DSH 的任务结束 / 审批 / 提问事件 POST 给 DSHNotch，
    变成 macOS 系统通知（见上面「DSH 通知」）。
 
-> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.2.2.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-Setup-1.2.2.exe) 双击安装即可（装到
+> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.2.2.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.6/DSHNotch-Setup-1.2.3.exe) 双击安装即可（装到
 > `%LOCALAPPDATA%\Programs\DSHNotch`，不需要解压或命令行）；插件（v1.3.0+）会自动探测并拉起它。
 > Gitee 发行版同样提供 Windows 安装包：https://gitee.com/hennysky/dsh-notch/releases/tag/v1.7.5
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
