@@ -21,7 +21,7 @@ Three things:
 - **DSH notifications**: macOS notifications when a task finishes, fails, or the agent stops for your approval or answer. Click to switch back to DSH; the banner disappears, but the **red dot on the menu bar does not** — until you open the card.
 - **Starts with DSH**: one companion plugin launches it with DSH and bridges session events into notifications.
 
-> Status: v1.6.9 (Windows 1.2.3 / plugin 1.6.1) · MIT · macOS 14+ · Apple Silicon — 12 human-free self-checks, plugin tests and real notification delivery all verified.
+> Status: v1.6.9 (Windows 1.2.3 / plugin 1.6.1) · MIT · macOS 14+ · Apple Silicon — 14 human-free self-checks, plugin tests and real notification delivery all verified.
 
 ---
 
@@ -60,9 +60,9 @@ sending, no top-up flow, no access to your account beyond what DSH already store
 ### Download
 
 [GitHub Releases](https://github.com/hennysky/dsh-notch/releases) ·
-[Gitee releases](https://gitee.com/hennysky/dsh-notch/releases) (faster from mainland China)
+[Gitee releases](https://gitee.com/hennysky/dsh-notch/releases) (faster from mainland China; assets currently at v1.7.5 — use GitHub for the latest icon fix)
 
-The packages on both platforms are byte-for-byte identical. Either one works.
+Same-version packages are byte-for-byte identical on both platforms; Gitee assets currently stop at v1.7.5.
 
 ### One-line install
 
@@ -78,7 +78,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 ```bash
 # Gitee
 curl -fL -o /tmp/DSHNotch.zip \
-  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-1.6.9.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-1.6.5.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -304,7 +304,7 @@ instead of launching it by hand.
 2. **Notification bridge** (v1.1.0+): it POSTs DSH's turn-finished / approval / question events
    to DSHNotch, which turns them into macOS notifications (see "DSH notifications" above).
 
-> **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.2.2.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.6/DSHNotch-Setup-1.2.3.exe) — it installs
+> **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.2.3.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-Setup-1.2.3.exe) — it installs
 > into `%LOCALAPPDATA%\Programs\DSHNotch` with a Start Menu shortcut (no unzip, no command line);
 > the plugin (v1.3.0+) detects and launches it. The Gitee release also carries the Windows
 > installer: https://gitee.com/hennysky/dsh-notch/releases/tag/v1.7.5
@@ -413,7 +413,7 @@ has no notch, the app falls back to menu bar mode and logs a line.
 
 ## Self-checks
 
-The project ships 12 self-checks, **none of which require eyes** — the development environment
+The project ships 14 self-checks, **none of which require eyes** — the development environment
 has no screen-recording permission, so every claim has to be verifiable by command:
 
 ```bash
@@ -430,6 +430,8 @@ $BIN --setupcheck      # first-run guidance: classification of missing/signed-ou
 $BIN --panelcheck      # window placement + layer above the menu bar
 $BIN --clicktest       # click path + hit testing + content pixels + mid-animation sampling
 $BIN --notifycheck     # notification bridge protocol: /health, /notify, dedupe, truncation, error codes
+$BIN --sessioncostcheck
+$BIN --calendarcheck
 $BIN --unreadcheck     # unread badge: counting / clearing / the icon really contains red pixels
 ```
 

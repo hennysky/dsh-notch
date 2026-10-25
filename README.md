@@ -22,7 +22,7 @@
   横幅会消失，但菜单栏图标上的**红点不会**——直到你点开卡片。
 - **跟着 DSH 启动**：装一个配套插件，DSH 启动时自动拉起，并负责把会话事件转成通知。
 
-> 状态：v1.6.9（Windows 1.2.3 / 插件 1.6.1）· MIT · macOS 14+ · Apple Silicon ｜ 12 项零人工自检、插件测试与真实通知投递均已实测
+> 状态：v1.6.9（Windows 1.2.3 / 插件 1.6.1）· MIT · macOS 14+ · Apple Silicon ｜ 14 项零人工自检、插件测试与真实通知投递均已实测
 
 ---
 
@@ -57,9 +57,9 @@ DSHNotch 解决这两件事：把余额搬到刘海／菜单栏，并在额度�
 ### 下载
 
 [GitHub Releases](https://github.com/hennysky/dsh-notch/releases) ·
-[Gitee 发行版](https://gitee.com/hennysky/dsh-notch/releases)（国内更快）
+[Gitee 发行版](https://gitee.com/hennysky/dsh-notch/releases)（国内更快；资产目前更新到 v1.7.5，通知图标等最新修复请用 GitHub）
 
-两个平台的安装包逐字节相同，任选。
+同一版本的安装包在两个平台逐字节相同；Gitee 资产目前更新到 v1.7.5。
 
 ### 安装（一条命令）
 
@@ -75,7 +75,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 ```bash
 # Gitee
 curl -fL -o /tmp/DSHNotch.zip \
-  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-1.6.9.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.5/DSHNotch-1.6.5.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -289,7 +289,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 2. **通知桥**（v1.1.0+）：把 DSH 的任务结束 / 审批 / 提问事件 POST 给 DSHNotch，
    变成 macOS 系统通知（见上面「DSH 通知」）。
 
-> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.2.2.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.6/DSHNotch-Setup-1.2.3.exe) 双击安装即可（装到
+> **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.2.3.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-Setup-1.2.3.exe) 双击安装即可（装到
 > `%LOCALAPPDATA%\Programs\DSHNotch`，不需要解压或命令行）；插件（v1.3.0+）会自动探测并拉起它。
 > Gitee 发行版同样提供 Windows 安装包：https://gitee.com/hennysky/dsh-notch/releases/tag/v1.7.5
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
@@ -388,7 +388,7 @@ normal_wallets / bonus_wallets / total_costs
 
 ## 自检
 
-项目带 12 项自检，**全部不依赖肉眼**——开发环境没有屏幕录制权限，
+项目带 14 项自检，**全部不依赖肉眼**——开发环境没有屏幕录制权限，
 所以每个结论都要能被命令验证：
 
 ```bash
@@ -406,6 +406,8 @@ $BIN --panelcheck      # 窗口落点 + 层级高于菜单栏
 $BIN --clicktest       # 点击链路 + 命中测试 + 内容像素 + 收起动画中途采样
 $BIN --notifycheck     # 通知桥协议：/health、/notify、去重、截断、错误码
 $BIN --unreadcheck     # 未读红点：计数 / 清零 / 图标里真的画出了红色像素
+$BIN --sessioncostcheck # 当前会话花费：快照解析 / 过期 / 未收录模型 / 格式化
+$BIN --calendarcheck   # 用量日历：13×7 网格、今天位置、档位/颜色/中文单位
 ```
 
 排查显示问题时还有几个开关：
