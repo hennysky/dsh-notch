@@ -22,7 +22,7 @@
   横幅会消失，但菜单栏图标上的**红点不会**——直到你点开卡片。
 - **跟着 DSH 启动**：装一个配套插件，DSH 启动时自动拉起，并负责把会话事件转成通知。
 
-> 状态：v1.6.7（Windows 1.2.3 / 插件 1.6.1）· MIT · macOS 14+ · Apple Silicon ｜ 12 项零人工自检、插件测试与真实通知投递均已实测
+> 状态：v1.6.8（Windows 1.2.3 / 插件 1.6.1）· MIT · macOS 14+ · Apple Silicon ｜ 12 项零人工自检、插件测试与真实通知投递均已实测
 
 ---
 
@@ -66,7 +66,7 @@ DSHNotch 解决这两件事：把余额搬到刘海／菜单栏，并在额度�
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.7.6/DSHNotch-1.6.7.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.7.7/DSHNotch-1.6.8.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -75,7 +75,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 ```bash
 # Gitee
 curl -fL -o /tmp/DSHNotch.zip \
-  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.6/DSHNotch-1.6.7.zip \
+  https://gitee.com/hennysky/dsh-notch/releases/download/v1.7.7/DSHNotch-1.6.8.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -83,7 +83,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 
 ### 手动安装
 
-1. 下载 `DSHNotch-1.6.7.zip`
+1. 下载 `DSHNotch-1.6.8.zip`
 2. 解压，把 `DSHNotch.app` 拖进「应用程序」
 3. **首次打开必须右键 → 打开**（原因见下）
 
