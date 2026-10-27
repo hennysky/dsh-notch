@@ -11,7 +11,7 @@ DSH 的 Windows 托盘伴侣应用（C# / .NET 8 WinForms）。与 macOS 的 `DS
 
 ## 安装（推荐：安装包）
 
-下载 **[DSHNotch-Setup-1.2.3.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-Setup-1.2.3.exe)**，双击 → 下一步 → 安装。不需要解压、不需要命令行、不需要管理员：
+下载 **[DSHNotch-Setup-1.2.4.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.9/DSHNotch-Setup-1.2.4.exe)**，双击 → 下一步 → 安装。不需要解压、不需要命令行、不需要管理员：
 
 - 装到 `%LOCALAPPDATA%\Programs\DSHNotch`（插件默认就在这个位置找 `DSHNotch.exe`）
 - 可选：桌面快捷方式、开机自启
@@ -23,7 +23,7 @@ DSH 的 Windows 托盘伴侣应用（C# / .NET 8 WinForms）。与 macOS 的 `DS
 
 ### 便携版（不想安装）
 
-[DSHNotch-1.2.3-portable.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-1.2.3-portable.exe) 是单个自包含 exe，双击即用，不需要解压/安装；
+[DSHNotch-1.2.4-portable.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.9/DSHNotch-1.2.4-portable.exe) 是单个自包含 exe，双击即用，不需要解压/安装；
 代价是不会自动创建开始菜单/桌面快捷方式（其余功能相同）。
 
 ### 双击没反应怎么办
@@ -86,7 +86,7 @@ HTTP 401 提示重新登录，429 提示稍后重试，其余错误原样展示�
 
 ---
 
-## 当前会话花费（v1.1.0+，当前 1.2.3）
+## 当前会话花费（v1.1.0+，当前 1.2.4）
 
 卡片下方的「当前会话」区块显示你正在看的这个 DSH 会话用了多少 token、按官方价目
 **估算**花了多少钱。数据由 DSH 插件写入本地文件，本应用**只读、不发网络请求**：
@@ -212,7 +212,7 @@ Get-Content "$env:USERPROFILE\.dsh\notch\token-activity.json"
 
 ```bash
 curl -s 127.0.0.1:47810/health
-# {"ok":true,"app":"DSHNotch","version":"1.2.3","authorization":"authorized","unread":0}
+# {"ok":true,"app":"DSHNotch","version":"1.2.4","authorization":"authorized","unread":0}
 
 curl -s -X POST 127.0.0.1:47810/notify \
   -H 'content-type: application/json' \

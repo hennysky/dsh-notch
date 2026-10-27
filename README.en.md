@@ -21,7 +21,7 @@ Three things:
 - **DSH notifications**: macOS notifications when a task finishes, fails, or the agent stops for your approval or answer. Click to switch back to DSH; the banner disappears, but the **red dot on the menu bar does not** — until you open the card.
 - **Starts with DSH**: one companion plugin launches it with DSH and bridges session events into notifications.
 
-> Status: v1.6.9 (Windows 1.2.3 / plugin 1.6.1) · MIT · macOS 14+ · Apple Silicon — 14 human-free self-checks, plugin tests and real notification delivery all verified.
+> Status: v1.7.0 (Windows 1.2.4 / plugin 1.7.0) · MIT · macOS 14+ · Apple Silicon — 14 human-free self-checks, plugin tests and real notification delivery all verified.
 
 ---
 
@@ -69,7 +69,7 @@ Same-version packages are byte-for-byte identical on both platforms; Gitee asset
 ```bash
 # GitHub
 curl -fL -o /tmp/DSHNotch.zip \
-  https://github.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-1.6.9.zip \
+  https://github.com/hennysky/dsh-notch/releases/download/v1.7.9/DSHNotch-1.7.0.zip \
   && unzip -q -o /tmp/DSHNotch.zip -d /Applications \
   && xattr -dr com.apple.quarantine /Applications/DSHNotch.app \
   && open /Applications/DSHNotch.app
@@ -86,7 +86,7 @@ curl -fL -o /tmp/DSHNotch.zip \
 
 ### Manual install
 
-1. Download `DSHNotch-1.6.9.zip`
+1. Download `DSHNotch-1.7.0.zip`
 2. Unzip it and drag `DSHNotch.app` into `/Applications`
 3. **The first launch must be right-click → Open** (see below)
 
@@ -333,7 +333,7 @@ instead of launching it by hand.
 3. **Client enhancements**: the sidebar balance ring and the composer's next-message prediction
    (see "Client enhancements" above).
 
-> **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.2.3.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-Setup-1.2.3.exe) — it installs
+> **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.2.4.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.9/DSHNotch-Setup-1.2.4.exe) — it installs
 > into `%LOCALAPPDATA%\Programs\DSHNotch` with a Start Menu shortcut (no unzip, no command line);
 > the plugin (v1.3.0+) detects and launches it. The Gitee release also carries the Windows
 > installer: https://gitee.com/hennysky/dsh-notch/releases/tag/v1.7.5
