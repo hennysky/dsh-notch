@@ -22,7 +22,7 @@
   横幅会消失，但菜单栏图标上的**红点不会**——直到你点开卡片。
 - **跟着 DSH 启动**：装一个配套插件，DSH 启动时自动拉起，并负责把会话事件转成通知。
 
-> 状态：v1.6.9（Windows 1.2.3 / 插件 1.6.1）· MIT · macOS 14+ · Apple Silicon ｜ 14 项零人工自检、插件测试与真实通知投递均已实测
+> 状态：v1.6.9（Windows 1.2.3 / 插件 1.7.0）· MIT · macOS 14+ · Apple Silicon ｜ 14 项零人工自检、插件测试与真实通知投递均已实测
 
 ---
 
@@ -238,6 +238,27 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | 日志里没有「已注册 3 个监听」 | 插件还是旧版：重启一次 DSH 加载新代码 |
 | 日志里 `HTTP 200 … shown:false` | 卡片设置里对应的开关被关了 |
 
+### 客户端增强：余额环 + 输入预测
+
+装插件后，DeepSeek Harness 的客户端界面会多两件事（Web 与 Desktop 共用）：
+
+- **账号行余额环**：侧栏底部账号行右端显示「充值余额 + 赠送金额」和 18px 健康环
+  （如 `¥12.34 赠 ¥5.00`，赠送为 0 也会显示 `赠 ¥0.00`）。余额 ≥¥20 绿、¥10–20 琥珀、
+  <¥10 红，按 `余额/¥50` 填充。金额更新时数字从旧值**缓动滚动**到新值（600ms），
+  不会闪一下。点击金额或圆环弹出详情（充值/赠送/合计/更新时间）。
+  每 5 分钟、窗口聚焦、每轮结束各刷新一次；未登录时隐藏，读取失败保留上次的值。
+- **Codex 式输入预测**：一轮回复结束后，空输入框里先显示「**AI 填充中…**」的
+  转圈 + 文字流光加载态；建议回来后变成灰色「下一句」，按 <kbd>Tab</kbd> 填入
+  （**不发送**），<kbd>Esc</kbd> 或开始输入就消失。建议由模型根据最近几轮对话生成，
+  默认每轮最多调用一次 `deepseek-flash`；**Host 在 `turn/end` 时会主动生成并缓存**，
+  所以 agent 跑的时候切到别的对话、结束后再切回来，也能看到建议（缓存 5 分钟）。
+  可在插件配置里用 `prediction: false` 完全关掉。
+
+![账号行余额：充值余额 + 赠送金额 + 健康环](preview/client-ui-account.png)
+
+预测只把最近几轮对话的文本片段发给当前模型服务（不含图片/附件/工具全文），余额环只读
+DSH 自己的账号余额接口。实现、配置、排查与成本说明见 [docs/client-ui.md](docs/client-ui.md)。
+
 ### Token 用量日历
 
 卡片标题栏的日历按钮可以切到「用量日历」：日历页会把同一张卡片放大到 380×390，
@@ -284,11 +305,12 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 
 如果你每天都开着 DeepSeek Harness，可以让刘海工具**跟着 DSH 一起启动**，不用单独双击。
 
-仓库里的 [`plugin/`](plugin/) 是一个 DSH 插件，装进 profile 后它做两件事：
+仓库里的 [`plugin/`](plugin/) 是一个 DSH 插件，装进 profile 后它做三件事：
 
 1. **生命周期**：DSH 启动 → 插件激活 → 确保 `DSHNotch.app` 在跑；
 2. **通知桥**（v1.1.0+）：把 DSH 的任务结束 / 审批 / 提问事件 POST 给 DSHNotch，
-   变成 macOS 系统通知（见上面「DSH 通知」）。
+   变成 macOS 系统通知（见上面「DSH 通知」）；
+3. **客户端增强**：侧栏账号行余额环 + 输入框下一句预测（见上面「客户端增强」）。
 
 > **Windows 有独立的托盘伴侣**：下载 [DSHNotch-Setup-1.2.3.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-Setup-1.2.3.exe) 双击安装即可（装到
 > `%LOCALAPPDATA%\Programs\DSHNotch`，不需要解压或命令行）；插件（v1.3.0+）会自动探测并拉起它。
@@ -311,7 +333,8 @@ cat "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.
 ```
 
 启动行为：应用没跑就启动；已在运行则不重复启动（避免画出第二个刘海窗口）；
-应用不在预期位置则安静跳过。**改了插件代码必须重启 DSH**（Host 插件不像 Web UI 那样热更新）。
+应用不在预期位置则安静跳过。**改了 Host 侧插件代码要重启 DSH**（或在插件管理器里重新启用一次触发重载）；
+只改客户端 [plugin/client.js](plugin/client.js) 会热更新。
 
 ### 为什么插件不把界面直接搬进 DSH
 

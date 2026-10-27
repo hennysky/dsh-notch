@@ -1,11 +1,36 @@
 # dsh-plugin-notch-balance
 
-DSH 插件：**启动 DeepSeek Harness 时自动拉起 DSHNotch 刘海余额工具，并把
-「任务完成 / 需要你确认 / 需要你回答」推送成系统通知。**
+DSH 插件：**启动 DeepSeek Harness 时自动拉起 DSHNotch 刘海余额工具，把
+「任务完成 / 需要你确认 / 需要你回答」推送成系统通知，并增强 DSH 客户端界面。**
 
 - **macOS**：由 `DSHNotch.app` 发通知（本地 HTTP 桥，署名 DSH Notch）
 - **Windows**：不需要额外应用——直接由 DeepSeek Harness 自己发（Electron 原生通知 +
   任务栏未读红点）；拿不到 Electron 时退回 PowerShell toast
+
+## 客户端增强（client.js）
+
+装插件后 DSH 客户端会多两件事，均不修改会话、不自动发消息：
+
+- **账号行余额**：侧栏底部账号行右端显示「充值余额 + 赠送金额」和 18px 健康环
+  （余额/¥50，绿/琥珀/红）；金额更新时数字滚动 600ms；点击金额或环弹出
+  充值/赠送/合计/更新时间的详情。数据走 DSH 自己的 `remote.account.getBalance`。
+- **输入框预测**：一轮回复结束后，空输入框先显示「AI 填充中…」转圈 + 流光加载态，
+  随后用灰字显示「下一句」，Tab 填入但不发送；建议由 Host 侧调用模型生成
+  （默认 `deepseek-account/deepseek-flash`，每轮最多一次）。Host 在 `turn/end` 事件上
+  主动生成并缓存（5 分钟），切到别的对话再切回来也能看到。
+
+配置项见 [`cordis.patch.yml`](cordis.patch.yml)：
+
+```yaml
+prediction: true                    # 总开关；false = 客户端不请求、Host 不调模型
+# predictionProvider: ''            # 留空 = 自动
+# predictionModel: ''
+predictionMaxOutputTokens: 96
+predictionTimeoutMs: 8000
+predictionMaxInputBytes: 12000
+```
+
+详细实现、成本与排查见 [../docs/client-ui.md](../docs/client-ui.md)。
 
 ## 为什么是「拉起一个应用」而不是「把界面搬进 DSH」
 
@@ -21,7 +46,7 @@ DSH 插件：**启动 DeepSeek Harness 时自动拉起 DSHNotch 刘海余额工�
 | 东西 | 作用 |
 |---|---|
 | `DSHNotch.app` | 真正的刘海余额界面 + 发 macOS 通知的本地 HTTP 桥 |
-| 本插件 | 随 DSH 启动确保应用在跑；监听会话事件，把通知 POST 给应用 |
+| 本插件 | 随 DSH 启动确保应用在跑；监听会话事件，把通知 POST 给应用；给客户端加余额环与输入预测 |
 
 ## 安装
 

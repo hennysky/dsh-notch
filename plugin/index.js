@@ -55,6 +55,14 @@ import {
   defaultActivityFile,
   scanSessionFiles,
 } from './activity.js'
+import {
+  DEFAULT_MAX_INPUT_BYTES,
+  buildPredictionPrompt,
+  cleanPrediction,
+  extractPredictionContext,
+  fitPromptToBytes,
+  resolvePredictionRoute,
+} from './prediction.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -122,6 +130,20 @@ export const DEFAULTS = {
    * `%LOCALAPPDATA%\Programs\DSHNotch\DSHNotch.exe`。
    */
   windowsAppPath: '',
+  /**
+   * 输入框预测（Codex composer predictions 同款）：
+   * 一轮回复结束后，用模型生成「用户下一句」，客户端灰字显示，Tab 填入。
+   * false = 完全关闭（客户端不请求、Host 不调用模型）。
+   */
+  prediction: true,
+  /** 预测固定路由；留空 = 优先 deepseek-account/deepseek-flash，否则沿用会话最后一次路由。 */
+  predictionProvider: '',
+  predictionModel: '',
+  /** 预测输出 token 上限与端到端超时。 */
+  predictionMaxOutputTokens: 96,
+  predictionTimeoutMs: 8000,
+  /** 预测输入的 UTF-8 字节上限；超出从最早的对话开始丢。 */
+  predictionMaxInputBytes: DEFAULT_MAX_INPUT_BYTES,
 }
 
 /** 根会话的标题/正文模板。未列出的 reason.kind 一律不通知。 */
@@ -1505,6 +1527,9 @@ export function resolveSettings(config, platform = process.platform) {
       ? settings.windowsAppPath
       : defaultWindowsAppPath()
 
+  const positiveInteger = (value, fallback) =>
+    Number.isInteger(value) && value > 0 ? value : fallback
+
   return {
     platform,
     appPath:
@@ -1539,6 +1564,19 @@ export function resolveSettings(config, platform = process.platform) {
       typeof settings.tokenActivityCacheFile === 'string' && settings.tokenActivityCacheFile !== ''
         ? settings.tokenActivityCacheFile
         : defaultActivityCacheFile(),
+    prediction: settings.prediction !== false,
+    predictionProvider:
+      typeof settings.predictionProvider === 'string' ? settings.predictionProvider.trim() : '',
+    predictionModel: typeof settings.predictionModel === 'string' ? settings.predictionModel.trim() : '',
+    predictionMaxOutputTokens: positiveInteger(
+      Number(settings.predictionMaxOutputTokens),
+      DEFAULTS.predictionMaxOutputTokens,
+    ),
+    predictionTimeoutMs: positiveInteger(Number(settings.predictionTimeoutMs), DEFAULTS.predictionTimeoutMs),
+    predictionMaxInputBytes: positiveInteger(
+      Number(settings.predictionMaxInputBytes),
+      DEFAULTS.predictionMaxInputBytes,
+    ),
   }
 }
 
@@ -1606,6 +1644,272 @@ function registerNotificationListeners(ctx, settings, sender) {
   void sender.health?.()
 }
 
+// ─────────────────────────────────────────────────────────────
+// 输入框预测：Host 侧
+// ─────────────────────────────────────────────────────────────
+
+/** 预测结果最多缓存多少个会话；只保留最近一回合，避免无限增长。 */
+const PREDICTION_CACHE_SESSIONS = 64
+/** 同时进行的模型调用上限，防止快速切会话时把额度打满。 */
+const PREDICTION_CONCURRENCY = 3
+/** 记住多少个「客户端看过」的会话；只用于判断要不要主动生成。 */
+const PREDICTION_WATCH_LIMIT = 200
+/** 「切回会话时按需补生成」的时间窗口：只补最近 10 分钟内结束的回合。 */
+const PREDICTION_RECENT_MS = 10 * 60 * 1000
+/** 主动生成的建议缓存多久；过期后切回旧会话不会重放。 */
+const PREDICTION_CACHE_TTL_MS = 5 * 60 * 1000
+
+/** 统一 JSON 响应，避免各处手写 header。 */
+function jsonResponse(body) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  })
+}
+
+/**
+ * 流式调用一次预测模型。
+ * @returns {Promise<string | null>} 清洗后的预测文本；模型跳过或失败时 null。
+ */
+async function streamPrediction(ctx, settings, route, prompt, clientSignal) {
+  const llm = ctx.get?.('llm')
+  if (llm === undefined || llm === null || typeof llm.stream !== 'function') return null
+
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  if (clientSignal?.aborted === true) controller.abort()
+  clientSignal?.addEventListener?.('abort', abort, { once: true })
+  const timer = setTimeout(() => controller.abort(), settings.predictionTimeoutMs)
+  timer.unref?.()
+
+  try {
+    let text = ''
+    const stream = llm.stream({
+      provider: route.provider,
+      model: route.model,
+      system: prompt.system,
+      messages: [{ role: 'user', content: [{ type: 'text', text: prompt.input }] }],
+      maxTokens: settings.predictionMaxOutputTokens,
+      signal: controller.signal,
+    })
+    for await (const chunk of stream) {
+      if (chunk !== null && typeof chunk === 'object' && chunk.type === 'text-delta') {
+        if (typeof chunk.text === 'string') text += chunk.text
+      } else if (chunk !== null && typeof chunk === 'object' && chunk.type === 'finish') {
+        const kind = chunk.reason?.kind
+        // stop / max-tokens 都可能带着可用的半句建议；其余终止原因都不收。
+        if (kind !== 'stop' && kind !== 'max-tokens') return null
+      }
+    }
+    return cleanPrediction(text)
+  } finally {
+    clearTimeout(timer)
+    clientSignal?.removeEventListener?.('abort', abort)
+  }
+}
+
+/**
+ * 预测运行时：会话级缓存 + 同回合去重 + 并发上限。
+ * @param ctx - Host 上下文。
+ * @param settings - resolveSettings 的结果。
+ */
+function createComposerPrediction(ctx, settings) {
+  /** @type {Map<string, { key: string, text: string, at: number }>} */
+  const cache = new Map()
+  /** @type {Map<string, { key: string, promise: Promise<object> }>} */
+  const inflight = new Map()
+  let active = 0
+
+  const remember = (sessionId, value) => {
+    cache.delete(sessionId)
+    cache.set(sessionId, value)
+    while (cache.size > PREDICTION_CACHE_SESSIONS) {
+      const oldest = cache.keys().next().value
+      if (oldest === undefined) break
+      cache.delete(oldest)
+    }
+  }
+
+  /**
+   * 为一次「回合结束」生成预测。
+   * @param {string} sessionId
+   * @param {AbortSignal | undefined} signal
+   * @param {{ cachedOnly?: boolean }} [options]
+   * @returns {Promise<{ text?: string, skip?: boolean, reason?: string }>}
+   */
+  const predict = async (sessionId, signal, options = {}) => {
+    if (!settings.prediction) return { skip: true, reason: 'disabled' }
+
+    const { events } = await readSessionEvents(ctx, sessionId)
+    if (!Array.isArray(events)) return { skip: true, reason: 'session-not-found' }
+
+    const context = extractPredictionContext(events)
+    if (!context.enough) return { skip: true, reason: 'not-enough-context' }
+
+    const key = `${sessionId}:${context.lastSeq}`
+    const cached = cache.get(sessionId)
+    if (cached !== undefined && cached.key === key) {
+      if (Date.now() - cached.at <= PREDICTION_CACHE_TTL_MS) return { text: cached.text }
+      cache.delete(sessionId)
+    }
+
+    const running = inflight.get(sessionId)
+    if (running !== undefined && running.key === key) return running.promise
+    if (options.cachedOnly === true) {
+      // 切回会话时优先取缓存；如果这一轮是很久以前结束的旧会话就不生成。
+      // 10 分钟内结束的回合允许现场补一次，覆盖 Host 主动生成没赶上的情况。
+      const recent = context.lastEventAt > 0 && Date.now() - context.lastEventAt <= PREDICTION_RECENT_MS
+      if (!recent) return { skip: true, reason: 'no-cache' }
+    }
+
+    const promise = (async () => {
+      const route = resolvePredictionRoute(context.route, {
+        provider: settings.predictionProvider,
+        model: settings.predictionModel,
+      })
+      if (route === null) return { skip: true, reason: 'no-route' }
+      if (active >= PREDICTION_CONCURRENCY) return { skip: true, reason: 'busy' }
+      if (signal?.aborted === true) return { skip: true, reason: 'aborted' }
+
+      active += 1
+      try {
+        const prompt = fitPromptToBytes(
+          buildPredictionPrompt(context),
+          settings.predictionMaxInputBytes,
+        )
+        const text = await streamPrediction(ctx, settings, route, prompt, signal)
+        if (text === null || text === '') return { skip: true, reason: 'model-skipped' }
+        remember(sessionId, { key, text, at: Date.now() })
+        log(`预测：已生成（${Array.from(text).length} 字，${route.provider}/${route.model}）`)
+        return { text, route }
+      } catch (error) {
+        if (signal?.aborted !== true) log(`预测：生成失败（${describeError(error)}）`)
+        return { skip: true, reason: 'failed' }
+      } finally {
+        active -= 1
+        const current = inflight.get(sessionId)
+        if (current !== undefined && current.key === key) inflight.delete(sessionId)
+      }
+    })()
+
+    inflight.set(sessionId, { key, promise })
+    return promise
+  }
+
+  return { predict }
+}
+
+/**
+ * 注册同源 POST `api/notch/predict`：客户端在每次回合结束后请求一句建议。
+ * 走 `connection.fetch`（浏览器带会话 cookie），与 DS Bot 的 `api/bot` 同一条通道。
+ */
+function registerComposerPrediction(ctx, settings) {
+  if (!settings.prediction) return
+  const connection = ctx.get?.('connection')
+  const register = connection?.fetch?.register
+  if (typeof register !== 'function') {
+    log('预测：connection.fetch 不可用，已跳过')
+    return
+  }
+
+  const runtime = createComposerPrediction(ctx, settings)
+  /** 客户端看过的会话（sessionId → 最后上报时间）；Host 侧据此主动生成。 */
+  const watched = new Map()
+
+  const rememberWatch = (sessionId) => {
+    const fresh = !watched.has(sessionId)
+    watched.delete(sessionId)
+    watched.set(sessionId, Date.now())
+    while (watched.size > PREDICTION_WATCH_LIMIT) {
+      const oldest = watched.keys().next().value
+      if (oldest === undefined) break
+      watched.delete(oldest)
+    }
+    if (fresh) log(`预测：开始关注会话 ${sessionId}`)
+  }
+
+  // 客户端每次切到某个会话都会 POST 一次；Host 不依赖客户端在回合结束时还停在哪个视图。
+  ctx.effect(
+    () =>
+      register({
+        path: '/api/notch/watch',
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async (request) => {
+          let payload = {}
+          try {
+            payload = await request.json()
+          } catch {
+            payload = {}
+          }
+          const sessionId = payload?.sessionId
+          if (typeof sessionId === 'string' && sessionId !== '') rememberWatch(sessionId)
+          return jsonResponse({ ok: true, value: true })
+        },
+      }),
+    'notch-balance.prediction-watch',
+  )
+
+  ctx.effect(
+    () =>
+      register({
+        path: '/api/notch/predict',
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async (request) => {
+          let payload = {}
+          try {
+            payload = await request.json()
+          } catch {
+            payload = {}
+          }
+          const sessionId = payload?.sessionId
+          if (typeof sessionId !== 'string' || sessionId === '') {
+            return jsonResponse({
+              ok: false,
+              error: { code: 'notch/bad-request', message: 'missing sessionId' },
+            })
+          }
+          const value = await runtime.predict(sessionId, request.signal, {
+            cachedOnly: payload?.cachedOnly === true,
+          })
+          return jsonResponse({ ok: true, value })
+        },
+      }),
+    'notch-balance.prediction',
+  )
+
+  // Host 侧主动生成：即使用户在回合结束前切到别的对话，turn/end 事件仍然会到达这里。
+  ctx.effect(
+    () =>
+      ctx.on(
+        'session/event',
+        (session, event) => {
+          try {
+            if (event?.type !== 'turn/end') return
+            const sessionId = sessionIdOfSession(session)
+            if (typeof sessionId !== 'string' || sessionId === '') return
+            if (!watched.has(sessionId)) return
+            if (!isRootSession(session)) return
+            const timer = setTimeout(() => {
+              void runtime.predict(sessionId).catch(() => {})
+            }, 250)
+            timer.unref?.()
+          } catch (error) {
+            // 预测失败不影响通知/花费等主流程。
+          }
+        },
+        { global: true },
+      ),
+    'notch-balance.prediction-events',
+  )
+
+  log('预测：已注册 api/notch/predict、api/notch/watch 与主动生成')
+}
+
 /**
  * @param ctx - 宿主上下文。
  * @param config - `cordis.patch.yml` 里的 config。
@@ -1614,6 +1918,13 @@ function registerNotificationListeners(ctx, settings, sender) {
  */
 export function apply(ctx, config = {}, runtime = {}) {
   const settings = resolveSettings(config, runtime.platform ?? process.platform)
+
+  // 输入框预测与通知/刘海完全独立：即使关掉通知也要注册。
+  try {
+    registerComposerPrediction(ctx, settings)
+  } catch (error) {
+    log(`预测：初始化失败（${describeError(error)}），已跳过`)
+  }
 
   // 当前会话花费与通知彼此独立：即使关掉通知，也继续记录花费快照。
   if (settings.sessionCost) {

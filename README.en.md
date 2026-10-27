@@ -251,6 +251,32 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | No "已注册 3 个监听" in the log | the plugin is still the old version: restart DSH once |
 | `HTTP 200 … shown:false` in the log | the matching toggle is off in the card settings |
 
+### Client enhancements: balance ring + composer prediction
+
+With the plugin installed, the DeepSeek Harness client (Web and Desktop share the same UI) gains:
+
+- **Balance ring on the account row** — the right edge of the sidebar's account row shows the
+  recharge balance and bonus amount (e.g. `¥12.34 赠 ¥5.00`; a zero bonus shows `赠 ¥0.00`)
+  next to an 18px health ring. Balance ≥¥20 is green, ¥10–20 amber, <¥10 red, filled by
+  `balance/¥50`. Updated amounts **roll** from the old value to the new one over 600ms instead
+  of flipping instantly. Click the amount or the ring for details (recharge / bonus / total /
+  updated time). It refreshes on mount, every 5 minutes, on window focus, and after each turn.
+  Hidden while signed out; a failed read keeps the last value.
+- **Codex-style composer prediction** — after a response finishes, the empty composer first shows
+  an animated **"AI filling in…"** state (spinner + shimmer), then the grey suggested next
+  message. Press <kbd>Tab</kbd> to fill it in (**without sending**); <kbd>Esc</kbd> or typing
+  dismisses it. A model generates the suggestion from the last few turns; by default that is one
+  `deepseek-flash` call per turn. The Host also generates proactively on `turn/end` and caches
+  the result for 5 minutes, so switching to another chat while the agent runs and coming back
+  afterwards still shows the suggestion. Set `prediction: false` in the plugin config to turn it
+  off.
+
+![Account row: recharge balance + bonus + health ring](preview/client-ui-account.png)
+
+Predictions send only the recent conversation text to the configured model provider (no images,
+attachments, or tool output). The ring only reads DSH's own account balance API. Implementation,
+config, troubleshooting and cost notes: [docs/client-ui.md](docs/client-ui.md) (Chinese).
+
 ### Token activity calendar
 
 A calendar button in the card header enlarges the same card to 380×390 and opens a 3-month
@@ -299,11 +325,13 @@ Changes take effect immediately and are remembered.
 If DeepSeek Harness is always running, you can have the notch widget **start together with DSH**
 instead of launching it by hand.
 
-[`plugin/`](plugin/) is a DSH plugin. Once installed into a profile it does two things:
+[`plugin/`](plugin/) is a DSH plugin. Once installed into a profile it does three things:
 
 1. **Lifecycle**: DSH starts → the plugin activates → it makes sure `DSHNotch.app` is running;
 2. **Notification bridge** (v1.1.0+): it POSTs DSH's turn-finished / approval / question events
-   to DSHNotch, which turns them into macOS notifications (see "DSH notifications" above).
+   to DSHNotch, which turns them into macOS notifications (see "DSH notifications" above);
+3. **Client enhancements**: the sidebar balance ring and the composer's next-message prediction
+   (see "Client enhancements" above).
 
 > **Windows has its own tray companion**: download and run [DSHNotch-Setup-1.2.3.exe](https://github.com/hennysky/dsh-notch/releases/download/v1.7.8/DSHNotch-Setup-1.2.3.exe) — it installs
 > into `%LOCALAPPDATA%\Programs\DSHNotch` with a Start Menu shortcut (no unzip, no command line);
@@ -329,8 +357,9 @@ cat "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.
 
 Launch behaviour: starts the app when it is not running; does nothing when it is already running
 (so a second notch window is never drawn); and skips quietly when the app is not where it is
-expected. **Plugin code changes need a DSH restart** — Host plugins are not hot-reloaded like the
-Web UI.
+expected. **Host-side plugin code changes need a DSH restart** (or one re-enable in the plugin
+manager to trigger a profile recomposition); client-only changes in
+[plugin/client.js](plugin/client.js) hot-reload.
 
 ### Why the plugin does not move the UI into DSH
 

@@ -25,3 +25,14 @@
         # tokenActivityFile: ''
         # 内部缓存路径；留空 = ~/.dsh/notch/token-activity-cache.json
         # tokenActivityCacheFile: ''
+        # 输入框预测（Codex composer predictions 同款）：回合结束后生成下一句，客户端 Tab 填入。
+        # false = 完全关闭（客户端不请求、Host 不调用模型）。
+        prediction: true
+        # 固定预测路由；留空 = 优先 deepseek-account/deepseek-flash，否则沿用会话最后一次模型。
+        # predictionProvider: ''
+        # predictionModel: ''
+        # 预测输出 token 上限与端到端超时。
+        predictionMaxOutputTokens: 96
+        predictionTimeoutMs: 8000
+        # 预测输入的 UTF-8 字节上限；超出从最早的对话开始丢。
+        predictionMaxInputBytes: 12000

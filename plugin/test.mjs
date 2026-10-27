@@ -68,6 +68,15 @@ import {
   normalizeModel,
   pricesFor,
 } from './session-cost.js'
+import {
+  OUTPUT_TEXT_LIMIT,
+  buildPredictionPrompt,
+  cleanPrediction,
+  clipText,
+  extractPredictionContext,
+  fitPromptToBytes,
+  resolvePredictionRoute,
+} from './prediction.js'
 
 const APP = '/Applications/DSHNotch.app'
 const LOG = path.join(tmpdir(), 'dsh-notch-plugin.log')
@@ -1368,6 +1377,142 @@ check(
   JSON.stringify(pendingSnapshot?.value?.days?.at(-1)),
 )
 pendingTracker.dispose()
+
+// ─────────────────────────────────────────────────────────────
+// F. 输入框预测（纯逻辑）
+// ─────────────────────────────────────────────────────────────
+console.log('\n── F. 输入框预测 ──')
+
+const predictionEvents = [
+  { type: 'session/title', seq: 1, data: { title: '圆环与预输入' } },
+  {
+    type: 'user/message',
+    seq: 2,
+    data: {
+      role: 'user',
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: '给账号行加一个余额环' }],
+    },
+  },
+  {
+    type: 'user/message',
+    seq: 3,
+    data: {
+      role: 'user',
+      source: { kind: 'runtime-context' },
+      content: [{ type: 'text', text: 'Current working directory: /tmp' }],
+    },
+  },
+  {
+    type: 'assistant/message',
+    seq: 4,
+    data: {
+      message: {
+        source: { provider: 'deepseek-account', model: 'deepseek-v4-pro' },
+        content: [
+          { type: 'tool-call', id: 't' },
+          { type: 'text', text: '已经加好了。' },
+        ],
+      },
+    },
+  },
+  {
+    type: 'user/message',
+    seq: 5,
+    data: {
+      role: 'user',
+      source: { kind: 'user' },
+      content: [{ type: 'image', attachment: { attachmentId: 'a' } }],
+    },
+  },
+  {
+    type: 'assistant/message',
+    seq: 6,
+    data: {
+      message: {
+        source: { provider: 'deepseek-account', model: 'deepseek-flash' },
+        content: [{ type: 'text', text: '再顺手加上 Tab 预输入。' }],
+      },
+    },
+  },
+]
+
+const predictionContext = extractPredictionContext(predictionEvents)
+check(
+  'prediction：只收用户真实消息与 assistant 文本（连续 assistant 合并）',
+  predictionContext.turns.length === 2 &&
+    predictionContext.turns[0].role === 'user' &&
+    predictionContext.turns[0].text === '给账号行加一个余额环' &&
+    predictionContext.turns[1].role === 'assistant' &&
+    predictionContext.turns[1].text === '已经加好了。 再顺手加上 Tab 预输入。',
+  JSON.stringify(predictionContext.turns),
+)
+check(
+  'prediction：运行时上下文与纯图片消息不进上下文',
+  !predictionContext.turns.some((turn) => turn.text.includes('Current working directory')),
+)
+check(
+  'prediction：路由取最后一条 assistant 消息',
+  predictionContext.route?.provider === 'deepseek-account' &&
+    predictionContext.route?.model === 'deepseek-flash',
+  JSON.stringify(predictionContext.route),
+)
+check('prediction：lastSeq 取最大 seq', predictionContext.lastSeq === 6, String(predictionContext.lastSeq))
+check('prediction：enough = 至少一问一答', predictionContext.enough === true)
+
+const prompt = buildPredictionPrompt(predictionContext)
+check('prediction：system 要求只输出一句话', prompt.system.includes('Reply with the message text only'))
+check(
+  'prediction：input 带会话标题与最近对话',
+  prompt.input.includes('圆环与预输入') && prompt.input.includes('User: 给账号行加一个余额环'),
+)
+
+const longPrompt = fitPromptToBytes(
+  { system: 's', input: `Conversation title: t\n\nRecent conversation:\n${'User: x\n'.repeat(500)}` },
+  600,
+)
+check(
+  'prediction：输入超字节上限时从最早对话开始裁',
+  Buffer.byteLength(longPrompt.input, 'utf8') <= 600 && longPrompt.dropped > 0,
+  `bytes=${Buffer.byteLength(longPrompt.input, 'utf8')} dropped=${longPrompt.dropped}`,
+)
+
+check('cleanPrediction：去掉角色前缀与引号', cleanPrediction('User: "继续。"') === '继续。')
+check('cleanPrediction：多行压成一行', cleanPrediction('第一行\n第二行') === '第一行 第二行')
+check('cleanPrediction：[SKIP] 返回 null', cleanPrediction(' [SKIP] ') === null)
+check('cleanPrediction：空串返回 null', cleanPrediction('   ') === null)
+check(
+  'cleanPrediction：超长截断',
+  Array.from(cleanPrediction('字'.repeat(OUTPUT_TEXT_LIMIT + 50))).length === OUTPUT_TEXT_LIMIT,
+)
+check('clipText：按码点截断并补省略号', clipText('一二三四五', 4) === '一二三…')
+
+check(
+  'resolvePredictionRoute：deepseek-account 固定 flash',
+  resolvePredictionRoute({ provider: 'deepseek-account', model: 'deepseek-v4-pro' })?.model === 'deepseek-flash',
+)
+check(
+  'resolvePredictionRoute：显式配置优先',
+  resolvePredictionRoute(
+    { provider: 'deepseek-account', model: 'deepseek-v4-pro' },
+    { provider: 'custom', model: 'small' },
+  )?.provider === 'custom',
+)
+check(
+  'resolvePredictionRoute：其它 provider 沿用会话路由',
+  resolvePredictionRoute({ provider: 'llm-pi-ai', model: 'x' })?.model === 'x',
+)
+check('resolvePredictionRoute：没有路由返回 null', resolvePredictionRoute(null) === null)
+
+const predictionSettings = resolveSettings({ prediction: false }, 'linux')
+check('prediction：配置可整体关闭', predictionSettings.prediction === false)
+check(
+  'prediction：默认 token/超时/输入上限',
+  predictionSettings.predictionMaxOutputTokens === 96 &&
+    predictionSettings.predictionTimeoutMs === 8000 &&
+    predictionSettings.predictionMaxInputBytes === 12_000,
+  JSON.stringify(predictionSettings),
+)
 
 // ─────────────────────────────────────────────────────────────
 // B. 原有进程级三态（会临时启动 / 收掉 DSHNotch.app）
