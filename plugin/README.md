@@ -58,7 +58,26 @@ predictionMaxInputBytes: 12000
 `DSHNotch.app` 放到 `/Applications/DSHNotch.app`（插件默认从这里启动）。
 装在别处的话，改插件 `config.appPath`。
 
-### 2. 再装插件
+### 2. 装插件
+
+**方式 A（推荐）：插件索引**
+
+DSH 0.2.2+ 打开 **设置 → 插件 → 发现 → 索引源 → 添加**，粘贴：
+
+```
+https://raw.githubusercontent.com/hennysky/dsh-notch/main/plugin-index.json
+```
+
+国内可用 Gitee 镜像：
+
+```
+https://gitee.com/hennysky/dsh-notch/raw/main/plugin-index.json
+```
+
+然后在「发现」里找到 **DSH Notch** 安装即可。索引文件是仓库根目录的
+[`plugin-index.json`](../plugin-index.json)，会列出插件版本。
+
+**方式 B：命令行（本地目录或旧版 DSH）**
 
 ```bash
 DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"

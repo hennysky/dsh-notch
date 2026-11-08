@@ -341,6 +341,35 @@ instead of launching it by hand.
 > Harness's own Electron notifications, then to a PowerShell toast. Source lives in
 > [`windows/`](windows/); see [plugin/README.md](plugin/README.md).
 
+### Install from the plugin index (recommended)
+
+DSH 0.2.2+ can read a plugin index from the **Settings → Plugins → Discover → Index sources**
+dialog. Add it once, then install/update from the list:
+
+1. Open **Settings → Plugins → Discover → Index sources → Add**;
+2. Paste this index URL:
+
+   ```
+   https://raw.githubusercontent.com/hennysky/dsh-notch/main/plugin-index.json
+   ```
+
+3. Go back to **Discover**, find **DSH Notch**, and install it;
+4. Restart DeepSeek Harness.
+
+If GitHub is slow, use the Gitee mirror:
+
+```
+https://gitee.com/hennysky/dsh-notch/raw/main/plugin-index.json
+```
+
+The index lives at [`plugin-index.json`](plugin-index.json); its format and maintenance notes are
+in [docs/plugin-index.md](docs/plugin-index.md). It lists 1.7.1 and 1.7.0, installed from a pinned
+commit of the `plugin/` directory.
+
+### Manual install (CLI)
+
+If your client does not have index sources yet, or you are working from a local checkout:
+
 ```bash
 DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 "$DSH" plugin --profile desktop add /path/to/dsh-notch/plugin

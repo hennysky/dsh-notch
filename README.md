@@ -318,6 +318,34 @@ DSH 自己的账号余额接口。实现、配置、排查与成本说明见 [do
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
 > 源码在 [`windows/`](windows/)，见 [plugin/README.md](plugin/README.md)。
 
+### 从插件索引安装（推荐）
+
+DSH 0.2.2+ 的「插件 → 发现」支持添加索引源，粘贴一次就可以在列表里直接安装/更新：
+
+1. 打开 **设置 → 插件 → 发现 → 索引源 → 添加**；
+2. 粘贴这个索引 URL：
+
+   ```
+   https://raw.githubusercontent.com/hennysky/dsh-notch/main/plugin-index.json
+   ```
+
+3. 回到「发现」，找到 **DSH Notch** → 安装；
+4. 重启 DeepSeek Harness 生效。
+
+国内访问 GitHub 慢时，可以用 Gitee 镜像索引：
+
+```
+https://gitee.com/hennysky/dsh-notch/raw/main/plugin-index.json
+```
+
+索引文件本身在 [`plugin-index.json`](plugin-index.json)，格式与维护方式见
+[docs/plugin-index.md](docs/plugin-index.md)。索引里包含 1.7.1 和 1.7.0 两个版本，
+安装时从 GitHub 上固定 commit 拉取 `plugin/` 目录。
+
+### 手动安装（命令行）
+
+如果客户端版本还不支持索引，或者你本机就是仓库目录：
+
 ```bash
 DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 "$DSH" plugin --profile desktop add /path/to/dsh-notch/plugin
