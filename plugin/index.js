@@ -61,6 +61,7 @@ import {
   cleanPrediction,
   extractPredictionContext,
   fitPromptToBytes,
+  isPredictionReady,
   resolvePredictionRoute,
 } from './prediction.js'
 
@@ -1658,6 +1659,13 @@ const PREDICTION_WATCH_LIMIT = 200
 const PREDICTION_RECENT_MS = 10 * 60 * 1000
 /** 主动生成的建议缓存多久；过期后切回旧会话不会重放。 */
 const PREDICTION_CACHE_TTL_MS = 5 * 60 * 1000
+/** 「这一回合模型没给建议」的负缓存时长：客户端重试 / 重复挂载时不再重复烧模型。 */
+const PREDICTION_SKIP_TTL_MS = 60 * 1000
+/**
+ * 回合刚结束时会话事件可能还没写全（尤其是刚重建/刚切回的会话）：按这个节奏重读
+ * 会话日志。只读内存/文件、不调模型，所以代价很小，但能把「读早了」的漏预测救回来。
+ */
+const PREDICTION_CONTEXT_RETRY_DELAYS = [250, 700]
 
 /** 统一 JSON 响应，避免各处手写 header。 */
 function jsonResponse(body) {
@@ -1672,11 +1680,14 @@ function jsonResponse(body) {
 
 /**
  * 流式调用一次预测模型。
- * @returns {Promise<string | null>} 清洗后的预测文本；模型跳过或失败时 null。
+ * @returns {Promise<{ text: string | null, finish: string | null }>} 清洗后的预测文本
+ *   （模型跳过或失败时 null），以及流结束原因（排查用）。
  */
 async function streamPrediction(ctx, settings, route, prompt, clientSignal) {
   const llm = ctx.get?.('llm')
-  if (llm === undefined || llm === null || typeof llm.stream !== 'function') return null
+  if (llm === undefined || llm === null || typeof llm.stream !== 'function') {
+    return { text: null, finish: 'no-llm' }
+  }
 
   const controller = new AbortController()
   const abort = () => controller.abort()
@@ -1687,6 +1698,7 @@ async function streamPrediction(ctx, settings, route, prompt, clientSignal) {
 
   try {
     let text = ''
+    let finish = null
     const stream = llm.stream({
       provider: route.provider,
       model: route.model,
@@ -1699,12 +1711,12 @@ async function streamPrediction(ctx, settings, route, prompt, clientSignal) {
       if (chunk !== null && typeof chunk === 'object' && chunk.type === 'text-delta') {
         if (typeof chunk.text === 'string') text += chunk.text
       } else if (chunk !== null && typeof chunk === 'object' && chunk.type === 'finish') {
-        const kind = chunk.reason?.kind
+        finish = chunk.reason?.kind ?? null
         // stop / max-tokens 都可能带着可用的半句建议；其余终止原因都不收。
-        if (kind !== 'stop' && kind !== 'max-tokens') return null
+        if (finish !== 'stop' && finish !== 'max-tokens') return { text: null, finish }
       }
     }
-    return cleanPrediction(text)
+    return { text: cleanPrediction(text), finish }
   } finally {
     clearTimeout(timer)
     clientSignal?.removeEventListener?.('abort', abort)
@@ -1716,11 +1728,14 @@ async function streamPrediction(ctx, settings, route, prompt, clientSignal) {
  * @param ctx - Host 上下文。
  * @param settings - resolveSettings 的结果。
  */
-function createComposerPrediction(ctx, settings) {
+export function createComposerPrediction(ctx, settings) {
   /** @type {Map<string, { key: string, text: string, at: number }>} */
   const cache = new Map()
   /** @type {Map<string, { key: string, promise: Promise<object> }>} */
   const inflight = new Map()
+  /** 这一回合模型没给建议（[SKIP]/空串）的负缓存，避免重试和重复挂载反复烧模型。 */
+  /** @type {Map<string, { key: string, at: number }>} */
+  const skips = new Map()
   let active = 0
 
   const remember = (sessionId, value) => {
@@ -1741,19 +1756,46 @@ function createComposerPrediction(ctx, settings) {
    * @returns {Promise<{ text?: string, skip?: boolean, reason?: string }>}
    */
   const predict = async (sessionId, signal, options = {}) => {
-    if (!settings.prediction) return { skip: true, reason: 'disabled' }
+    // 每次跳过都写一行日志：没有日志就查不出「为什么这次没建议」，这正是之前
+    // 时灵时不灵却只能靠猜的原因。不记建议正文、不记对话内容。
+    // `aborted` 是客户端主动取消（切会话/开始输入），是有意的，不写，免得刷屏。
+    const skip = (reason, detail = '') => {
+      if (reason !== 'aborted') log(`预测：跳过（${reason}${detail === '' ? '' : `，${detail}`}）`)
+      return { skip: true, reason }
+    }
 
-    const { events } = await readSessionEvents(ctx, sessionId)
-    if (!Array.isArray(events)) return { skip: true, reason: 'session-not-found' }
+    if (!settings.prediction) return skip('disabled')
 
-    const context = extractPredictionContext(events)
-    if (!context.enough) return { skip: true, reason: 'not-enough-context' }
+    let { events } = await readSessionEvents(ctx, sessionId)
+    if (!Array.isArray(events)) return skip('session-not-found')
+
+    let context = extractPredictionContext(events)
+    // 回合刚结束时会话事件可能还没写全：短等重读两次再下结论。
+    if (!isPredictionReady(context)) {
+      for (const delay of PREDICTION_CONTEXT_RETRY_DELAYS) {
+        if (signal?.aborted === true) return skip('aborted')
+        await waitMilliseconds(delay)
+        const retry = await readSessionEvents(ctx, sessionId)
+        if (!Array.isArray(retry.events)) continue
+        events = retry.events
+        context = extractPredictionContext(events)
+        if (isPredictionReady(context)) break
+      }
+    }
+    if (!isPredictionReady(context)) {
+      const lastRole = context.turns[context.turns.length - 1]?.role ?? 'none'
+      return skip('not-enough-context', `${events.length} 个事件，最后一条=${lastRole}`)
+    }
 
     const key = `${sessionId}:${context.lastSeq}`
     const cached = cache.get(sessionId)
     if (cached !== undefined && cached.key === key) {
       if (Date.now() - cached.at <= PREDICTION_CACHE_TTL_MS) return { text: cached.text }
       cache.delete(sessionId)
+    }
+    const skipped = skips.get(sessionId)
+    if (skipped !== undefined && skipped.key === key && Date.now() - skipped.at <= PREDICTION_SKIP_TTL_MS) {
+      return skip('model-skipped', '负缓存')
     }
 
     const running = inflight.get(sessionId)
@@ -1762,7 +1804,7 @@ function createComposerPrediction(ctx, settings) {
       // 切回会话时优先取缓存；如果这一轮是很久以前结束的旧会话就不生成。
       // 10 分钟内结束的回合允许现场补一次，覆盖 Host 主动生成没赶上的情况。
       const recent = context.lastEventAt > 0 && Date.now() - context.lastEventAt <= PREDICTION_RECENT_MS
-      if (!recent) return { skip: true, reason: 'no-cache' }
+      if (!recent) return skip('no-cache')
     }
 
     const promise = (async () => {
@@ -1770,9 +1812,9 @@ function createComposerPrediction(ctx, settings) {
         provider: settings.predictionProvider,
         model: settings.predictionModel,
       })
-      if (route === null) return { skip: true, reason: 'no-route' }
-      if (active >= PREDICTION_CONCURRENCY) return { skip: true, reason: 'busy' }
-      if (signal?.aborted === true) return { skip: true, reason: 'aborted' }
+      if (route === null) return skip('no-route')
+      if (active >= PREDICTION_CONCURRENCY) return skip('busy')
+      if (signal?.aborted === true) return skip('aborted')
 
       active += 1
       try {
@@ -1780,14 +1822,26 @@ function createComposerPrediction(ctx, settings) {
           buildPredictionPrompt(context),
           settings.predictionMaxInputBytes,
         )
-        const text = await streamPrediction(ctx, settings, route, prompt, signal)
-        if (text === null || text === '') return { skip: true, reason: 'model-skipped' }
+        const { text, finish } = await streamPrediction(ctx, settings, route, prompt, signal)
+        // 客户端取消（新一轮开始/用户开始输入）不是「模型没建议」，别写进负缓存。
+        if (signal?.aborted === true) return skip('aborted')
+        if (text === null || text === '') {
+          skips.set(sessionId, { key, at: Date.now() })
+          // 负缓存只按会话留最近一条，条数与会话数同阶；超过上限按插入顺序淘汰。
+          while (skips.size > PREDICTION_CACHE_SESSIONS) {
+            const oldest = skips.keys().next().value
+            if (oldest === undefined) break
+            skips.delete(oldest)
+          }
+          return skip('model-skipped', `finish=${finish ?? 'none'}`)
+        }
+        skips.delete(sessionId)
         remember(sessionId, { key, text, at: Date.now() })
         log(`预测：已生成（${Array.from(text).length} 字，${route.provider}/${route.model}）`)
         return { text, route }
       } catch (error) {
         if (signal?.aborted !== true) log(`预测：生成失败（${describeError(error)}）`)
-        return { skip: true, reason: 'failed' }
+        return skip('failed', signal?.aborted === true ? 'aborted' : '')
       } finally {
         active -= 1
         const current = inflight.get(sessionId)

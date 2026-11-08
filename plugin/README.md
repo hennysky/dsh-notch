@@ -16,8 +16,11 @@ DSH 插件：**启动 DeepSeek Harness 时自动拉起 DSHNotch 刘海余额工�
   充值/赠送/合计/更新时间的详情。数据走 DSH 自己的 `remote.account.getBalance`。
 - **输入框预测**：一轮回复结束后，空输入框先显示「AI 填充中…」转圈 + 流光加载态，
   随后用灰字显示「下一句」，Tab 填入但不发送；建议由 Host 侧调用模型生成
-  （默认 `deepseek-account/deepseek-flash`，每轮最多一次）。Host 在 `turn/end` 事件上
+  （默认 `deepseek-account/deepseek-flash`，正常每轮一次）。Host 在 `turn/end` 事件上
   主动生成并缓存（5 分钟），切到别的对话再切回来也能看到。
+  回合刚结束时事件可能还没写全，两端都会短间隔重试（Host 重读会话日志、客户端带
+  `cachedOnly` 再问），所以偶尔晚 1～2 秒出现；每次跳过都会在日志里留一行
+  `预测：跳过（原因）`，排查见 [../docs/client-ui.md](../docs/client-ui.md#5-排查)。
 
 配置项见 [`cordis.patch.yml`](cordis.patch.yml)：
 

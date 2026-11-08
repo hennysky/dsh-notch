@@ -741,6 +741,18 @@ window.__ModuleLoader__.load({
     const PREDICTION_ENDPOINT = 'api/notch/predict'
     /** 建议超过这个时间就不再生效，避免切回旧会话时看到上一次的残留。 */
     const PREDICTION_TTL_MS = 300_000
+    /**
+     * 跳过原因 → 重试间隔（毫秒）。与 prediction.js 的 PREDICTION_RETRY_PLAN 保持一致。
+     *
+     * 只重试「过一会儿可能就好了」的原因：回合事件还没写完、Host 主动生成还没落地、
+     * 并发打满、网络抖一下。`model-skipped` 是模型自己的判断、`no-cache` 是旧会话没建议，
+     * 重试都不会变好，不重试。
+     */
+    const PREDICTION_RETRY_PLAN = {
+      'not-enough-context': [600, 1600],
+      busy: [700, 1800],
+      failed: [1200],
+    }
 
     /**
      * 跨会话的建议仓库：根级 manager 写入，会话组件订阅。
@@ -800,6 +812,8 @@ window.__ModuleLoader__.load({
       const suggestions = new Map()
       const inflight = new Map()
       const pending = new Set()
+      /** sessionId → 下一次重试的定时器；用户输入/新一轮开始时必须清掉。 */
+      const retryTimers = new Map()
       const pendingTimers = new Map()
       const runningState = new Map()
       /**
@@ -875,8 +889,44 @@ window.__ModuleLoader__.load({
         return true
       }
 
+      /** 清掉某个会话挂着的重试定时器。 */
+      const clearRetry = (sessionId) => {
+        const timer = retryTimers.get(sessionId)
+        if (timer === undefined) return
+        window.clearTimeout(timer)
+        retryTimers.delete(sessionId)
+      }
+
+      /**
+       * 按 Host 给的跳过原因排一次重试。
+       *
+       * 回合刚结束时是预测最不稳定的时刻：会话事件可能还没写完（Host 报
+       * `not-enough-context`）。过几百毫秒再问一次通常就有了；`model-skipped`
+       * 是模型自己的判断、`no-cache` 是旧会话没有建议，重试都不会变好。
+       */
+      const retryLater = (sessionId, reason, attempt) => {
+        if (disposed || suggestions.has(sessionId)) return
+        const delays = PREDICTION_RETRY_PLAN[reason]
+        if (!Array.isArray(delays)) return
+        const delay = delays[attempt]
+        if (delay === undefined) return
+        clearRetry(sessionId)
+        retryTimers.set(
+          sessionId,
+          window.setTimeout(() => {
+            retryTimers.delete(sessionId)
+            if (disposed || inflight.has(sessionId) || suggestions.has(sessionId)) return
+            // 重试只取 Host 已有的结果；顺带把窗口内漏生成的回合补上，所以带 cachedOnly。
+            void request(sessionId, { cachedOnly: true, quiet: true, attempt: attempt + 1 })
+          }, delay),
+        )
+      }
+
       const request = async (sessionId, options = {}) => {
         if (disposed || inflight.has(sessionId)) return
+        const attempt = Number.isInteger(options.attempt) ? options.attempt : 0
+        // 新请求接手：把这一会话挂着的重试清掉，避免同一回合问两次。
+        clearRetry(sessionId)
         const controller = new AbortController()
         inflight.set(sessionId, controller)
         // 慢一点才显示「AI 填充中」：快速跳过/失败时不要闪一下；静默取缓存不显示。
@@ -902,15 +952,33 @@ window.__ModuleLoader__.load({
             }),
             signal: controller.signal,
           })
-          if (!response.ok) return
+          if (disposed || inflight.get(sessionId) !== controller) return
+          if (!response.ok) {
+            probe('prediction-http-error', { sessionId, status: response.status, attempt })
+            retryLater(sessionId, 'failed', attempt)
+            return
+          }
           const payload = await response.json().catch(() => null)
+          if (disposed || inflight.get(sessionId) !== controller) return
           const text = payload?.ok === true && typeof payload.value?.text === 'string' ? payload.value.text : ''
-          // 只接受仍然属于这一次请求的结果；新一轮开始后旧结果直接丢掉。
-          if (disposed || text === '' || inflight.get(sessionId) !== controller) return
+          if (text === '') {
+            // Host 明确说明了为什么没建议：能等好的就排一次重试，等不好的就安静收工。
+            const reason = typeof payload?.value?.reason === 'string' ? payload.value.reason : 'unknown'
+            probe('prediction-skip', {
+              sessionId,
+              reason,
+              cachedOnly: options.cachedOnly === true,
+              attempt,
+            })
+            retryLater(sessionId, reason, attempt)
+            return
+          }
+          clearRetry(sessionId)
           suggestions.set(sessionId, { text, at: Date.now() })
           hub.notify()
         } catch (error) {
-          // 失败静默：预测只是锦上添花，不打扰对话。
+          // 我们自己取消的（新一轮开始 / 用户开始输入）不算失败；其它情况再试一次。
+          if (controller.signal.aborted !== true) retryLater(sessionId, 'failed', attempt)
         } finally {
           const timer = pendingTimers.get(sessionId)
           if (timer !== undefined) {
@@ -954,6 +1022,7 @@ window.__ModuleLoader__.load({
           const was = previous.get(id) === true
           if (running) {
             suggestions.delete(id)
+            clearRetry(id)
             if (id === main) watchedEver.add(id)
             const controller = inflight.get(id)
             if (controller !== undefined) {
@@ -965,6 +1034,13 @@ window.__ModuleLoader__.load({
             const watched = id === main || watchedEver.has(id)
             if (watched && isRootSession(id)) void request(id)
           }
+        }
+        // 有的实现会在回合结束时把会话直接从 status map 里摘掉（而不是置 running:false）；
+        // 这也算「这一轮结束了」，否则快回合会整个漏掉。
+        for (const [id, was] of previous) {
+          if (was !== true || next.has(id)) continue
+          const watched = id === main || watchedEver.has(id)
+          if (watched && isRootSession(id)) void request(id)
         }
         markWatched()
         previous = next
@@ -1021,6 +1097,8 @@ window.__ModuleLoader__.load({
           if (pruneTimer !== null) window.clearInterval(pruneTimer)
           for (const timer of pendingTimers.values()) window.clearTimeout(timer)
           pendingTimers.clear()
+          for (const timer of retryTimers.values()) window.clearTimeout(timer)
+          retryTimers.clear()
           for (const controller of inflight.values()) {
             try {
               controller.abort()
@@ -1048,6 +1126,7 @@ window.__ModuleLoader__.load({
           return pending.has(sessionId)
         },
         cancel(sessionId) {
+          clearRetry(sessionId)
           const controller = inflight.get(sessionId)
           if (controller !== undefined) {
             try {

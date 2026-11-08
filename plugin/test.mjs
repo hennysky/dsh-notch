@@ -39,6 +39,7 @@ import {
   buildQuestionNotification,
   buildToastXml,
   buildTurnEndNotification,
+  createComposerPrediction,
   createNotificationRuntime,
   createWindowsSender,
   defaultWindowsAppPath,
@@ -70,11 +71,14 @@ import {
 } from './session-cost.js'
 import {
   OUTPUT_TEXT_LIMIT,
+  PREDICTION_RETRY_PLAN,
   buildPredictionPrompt,
   cleanPrediction,
   clipText,
   extractPredictionContext,
   fitPromptToBytes,
+  isPredictionReady,
+  predictionRetryDelays,
   resolvePredictionRoute,
 } from './prediction.js'
 
@@ -1463,8 +1467,52 @@ check('prediction：enough = 至少一问一答', predictionContext.enough === t
 const prompt = buildPredictionPrompt(predictionContext)
 check('prediction：system 要求只输出一句话', prompt.system.includes('Reply with the message text only'))
 check(
+  'prediction：不再给模型「懒得预测就 [SKIP]」的选项',
+  !prompt.system.includes('If no useful prediction is possible') &&
+    prompt.system.includes('Always give a prediction'),
+  prompt.system,
+)
+check(
+  'prediction：只在完全没有用户消息时才允许 [SKIP]',
+  prompt.system.includes('only when the transcript contains no user message'),
+)
+check(
   'prediction：input 带会话标题与最近对话',
   prompt.input.includes('圆环与预输入') && prompt.input.includes('User: 给账号行加一个余额环'),
+)
+
+check(
+  'prediction：重试计划只覆盖「等一会儿可能就好」的原因',
+  predictionRetryDelays('not-enough-context').length === 2 &&
+    predictionRetryDelays('busy').length >= 1 &&
+    predictionRetryDelays('failed').length >= 1,
+  JSON.stringify(PREDICTION_RETRY_PLAN),
+)
+check(
+  'prediction：旧会话没缓存 / 模型自己跳过 / 已关闭 / 没路由 / 取消 都不重试',
+  predictionRetryDelays('no-cache').length === 0 &&
+    predictionRetryDelays('model-skipped').length === 0 &&
+    predictionRetryDelays('disabled').length === 0 &&
+    predictionRetryDelays('no-route').length === 0 &&
+    predictionRetryDelays('aborted').length === 0,
+)
+check(
+  'prediction：未知原因不重试',
+  predictionRetryDelays(undefined).length === 0 &&
+    predictionRetryDelays('').length === 0 &&
+    predictionRetryDelays('toString').length === 0,
+)
+check(
+  'prediction：完整一问一答（最后一条 assistant）才允许生成',
+  isPredictionReady(predictionContext) === true &&
+    isPredictionReady({ enough: true, turns: [{ role: 'user', text: 'u' }, { role: 'assistant', text: 'a' }] }) ===
+      true &&
+    isPredictionReady({ enough: true, turns: [{ role: 'assistant', text: 'a' }, { role: 'user', text: 'u' }] }) ===
+      false &&
+    isPredictionReady({ enough: true, turns: [] }) === false &&
+    isPredictionReady(null) === false &&
+    isPredictionReady({ enough: false, turns: [{ role: 'user', text: 'u' }, { role: 'assistant', text: 'a' }] }) ===
+      false,
 )
 
 const longPrompt = fitPromptToBytes(
@@ -1513,6 +1561,99 @@ check(
     predictionSettings.predictionMaxInputBytes === 12_000,
   JSON.stringify(predictionSettings),
 )
+
+// ─────────────────────────────────────────────────────────────
+// F2. 输入框预测（Host 运行时：跳过原因 / 负缓存 / 完整回合护栏）
+// ─────────────────────────────────────────────────────────────
+console.log('\n── F2. 输入框预测运行时 ──')
+
+/** 造一个假的模型流：固定输出一段文本 + finish。 */
+function fakePredictionStream(text, finish = 'stop') {
+  let calls = 0
+  const stream = () => {
+    calls += 1
+    return (async function* () {
+      yield { type: 'text-delta', text }
+      yield { type: 'finish', reason: { kind: finish } }
+    })()
+  }
+  return {
+    stream,
+    get calls() {
+      return calls
+    },
+  }
+}
+
+/** 只给预测运行时需要的那两个服务：sessions（读事件）与 llm（调模型）。 */
+function fakePredictionCtx(events, stream) {
+  return {
+    get(name) {
+      if (name === 'sessions') return { get: () => ({ ownEvents: () => events }) }
+      if (name === 'llm') return { stream }
+      return undefined
+    },
+  }
+}
+
+const predictionRuntimeSettings = resolveSettings({ prediction: true }, 'linux')
+
+{
+  const model = fakePredictionStream('再补一个空状态')
+  const runtime = createComposerPrediction(fakePredictionCtx(predictionEvents, model.stream), predictionRuntimeSettings)
+  const first = await runtime.predict('session-ready')
+  const second = await runtime.predict('session-ready')
+  check(
+    'prediction 运行时：完整回合生成建议，同一回合走缓存不重复调模型',
+    first.text === '再补一个空状态' && second.text === '再补一个空状态' && model.calls === 1,
+    JSON.stringify({ first, second, calls: model.calls }),
+  )
+}
+
+{
+  // 只有用户消息、还没有 assistant 回答：这时生成会拿到上一轮的上下文，必须跳过。
+  const model = fakePredictionStream('不该出现')
+  const runtime = createComposerPrediction(
+    fakePredictionCtx(predictionEvents.slice(0, 2), model.stream),
+    predictionRuntimeSettings,
+  )
+  const result = await runtime.predict('session-early')
+  check(
+    'prediction 运行时：最后一轮没有 assistant 回答就不生成（等重读后报 not-enough-context）',
+    result.skip === true && result.reason === 'not-enough-context' && model.calls === 0,
+    JSON.stringify({ result, calls: model.calls }),
+  )
+  check(
+    'prediction 运行时：跳过原因写进日志，便于排查',
+    lastLog().includes('预测：跳过（not-enough-context'),
+    lastLog(),
+  )
+}
+
+{
+  // 模型自己回 [SKIP]：同一回合再来问，60 秒内直接回负缓存，不再烧一次模型。
+  const model = fakePredictionStream('[SKIP]')
+  const runtime = createComposerPrediction(fakePredictionCtx(predictionEvents, model.stream), predictionRuntimeSettings)
+  const first = await runtime.predict('session-skip')
+  const second = await runtime.predict('session-skip')
+  check(
+    'prediction 运行时：模型 [SKIP] 后负缓存同一回合，不重复调模型',
+    first.reason === 'model-skipped' && second.reason === 'model-skipped' && model.calls === 1,
+    JSON.stringify({ first, second, calls: model.calls }),
+  )
+}
+
+{
+  // 模型流抛错：报 failed（客户端据此重试一次），不把异常抛给路由。
+  const runtime = createComposerPrediction(
+    fakePredictionCtx(predictionEvents, () => {
+      throw new Error('boom')
+    }),
+    predictionRuntimeSettings,
+  )
+  const result = await runtime.predict('session-failed')
+  check('prediction 运行时：模型失败报 failed', result.skip === true && result.reason === 'failed', JSON.stringify(result))
+}
 
 // ─────────────────────────────────────────────────────────────
 // B. 原有进程级三态（会临时启动 / 收掉 DSHNotch.app）

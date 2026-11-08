@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-notch-balance",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "private": true,
   "description": "Launches DSHNotch on macOS, bridges DSH session events to native notifications on macOS and Windows, and enhances the DSH client with a sidebar balance ring and Codex-style composer predictions.",
   "type": "module",

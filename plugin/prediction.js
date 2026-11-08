@@ -25,6 +25,33 @@ export const OUTPUT_TEXT_LIMIT = 200
 export const SKIP_MARKER = '[SKIP]'
 
 /**
+ * 跳过/失败原因 → 客户端重试间隔（毫秒）。
+ *
+ * 只重试「过一会儿可能就好了」的原因：会话事件还没写完、并发打满、偶发网络/模型失败。
+ * 像 `model-skipped`（模型自己判断没得预测）、`no-cache`（旧会话）、`disabled`、`no-route`
+ * 这类重试也不会变好的原因不重试，免得白烧额度。
+ *
+ * 注意：客户端 `client.js` 是 `__ModuleLoader__` 打包的，不能 import 本文件，所以那边有一份
+ * 同样的表（`PREDICTION_RETRY_PLAN`）。改这里记得同步，本文件这份由测试守着重试语义。
+ */
+export const PREDICTION_RETRY_PLAN = {
+  'not-enough-context': [600, 1600],
+  busy: [700, 1800],
+  failed: [1200],
+}
+
+/**
+ * 取某个跳过原因的重试间隔表；没有计划的原因返回空数组。
+ * @param {unknown} reason
+ * @returns {number[]}
+ */
+export function predictionRetryDelays(reason) {
+  if (typeof reason !== 'string' || reason === '') return []
+  const plan = PREDICTION_RETRY_PLAN[reason]
+  return Array.isArray(plan) ? plan : []
+}
+
+/**
  * 按码点截断，超出时以省略号结尾。
  * @param {string} value
  * @param {number} limit
@@ -161,6 +188,24 @@ export function extractPredictionContext(events, options = {}) {
 }
 
 /**
+ * 预测是否已经具备「完整的一轮」：至少一问一答，且最后一条是 assistant。
+ *
+ * 最后一条停在 user 有两种情况：回合还在写（事件先到了、assistant 消息没到），或者这轮
+ * 被打断/没有文本回答。两种都不该生成——否则会拿着上一轮的上下文给出一个牛头不对马尾的
+ * 建议。Host 读不到就等一会儿重读，读到了再生成。
+ *
+ * @param {ReturnType<typeof extractPredictionContext> | null | undefined} context
+ * @returns {boolean}
+ */
+export function isPredictionReady(context) {
+  if (context === null || typeof context !== 'object') return false
+  if (context.enough !== true) return false
+  const turns = Array.isArray(context.turns) ? context.turns : []
+  const last = turns[turns.length - 1]
+  return last !== undefined && last !== null && last.role === 'assistant'
+}
+
+/**
  * 拼模型请求。输出 `system` 与 `input` 两段。
  * @param {ReturnType<typeof extractPredictionContext>} context
  * @returns {{ system: string, input: string }}
@@ -171,12 +216,15 @@ export function buildPredictionPrompt(context) {
   return {
     system: [
       'You predict the next message the user will send in a DeepSeek Harness coding conversation.',
-      'Read the recent conversation and write the single most likely next user message.',
+      'The transcript ends with an assistant reply. Write the single most likely next user message.',
       'Rules:',
       '- Reply with the message text only. No quotes, labels, markdown, or explanation.',
       '- Use the same language the user has been writing in.',
       '- Keep it under 80 words and specific to the current work.',
-      '- If no useful prediction is possible, reply exactly [SKIP].',
+      // 之前写「没得预测就 [SKIP]」，flash 在长对话里偷懒率约四成，建议大部分时候根本不出现。
+      // 只在真的没有任何用户消息时才允许跳过；正常回合一律给出具体的一句话。
+      '- Always give a prediction: mid-task users almost always reply with the next step, a follow-up, or "继续".',
+      '- Reply exactly [SKIP] only when the transcript contains no user message at all.',
     ].join('\n'),
     input: [
       `Conversation title: ${title}`,

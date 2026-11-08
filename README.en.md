@@ -21,7 +21,7 @@ Three things:
 - **DSH notifications**: macOS notifications when a task finishes, fails, or the agent stops for your approval or answer. Click to switch back to DSH; the banner disappears, but the **red dot on the menu bar does not** — until you open the card.
 - **Starts with DSH**: one companion plugin launches it with DSH and bridges session events into notifications.
 
-> Status: v1.7.0 (Windows 1.2.4 / plugin 1.7.0) · MIT · macOS 14+ · Apple Silicon — 14 human-free self-checks, plugin tests and real notification delivery all verified.
+> Status: v1.7.0 (Windows 1.2.4 / plugin 1.7.1) · MIT · macOS 14+ · Apple Silicon — 14 human-free self-checks, plugin tests and real notification delivery all verified.
 
 ---
 

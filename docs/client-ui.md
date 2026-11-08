@@ -65,6 +65,21 @@ Host（可靠兜底）：
   （比如插件刚重载），最近 10 分钟内结束的回合允许现场补生成一次；
 - 建议缓存 5 分钟，过期后不会在旧会话里重放。
 
+**重试（为什么以前会时有时无）**：回合刚结束的那几百毫秒是预测最脆弱的时刻——
+会话事件可能还没写全（Host 报 `not-enough-context`），Host 自己的主动生成也可能还没
+落地。现在两端都补了重试：
+
+| 跳过原因 | 谁重试 | 间隔 |
+|---|---|---|
+| `not-enough-context`（事件没写全 / 最后一轮还没有 assistant 回答） | Host 先重读会话日志 2 次；客户端再问 2 次 | Host 250/700ms；客户端 600/1600ms |
+| `busy`（并发打满） | 客户端 | 700/1800ms |
+| `failed`（网络/模型偶发失败） | 客户端 | 1200ms，只一次 |
+| `model-skipped` / `no-cache` / `disabled` / `no-route` / `aborted` | 不重试 | — |
+
+重试一律带 `cachedOnly`：Host 有缓存就直接给，不会重复烧模型；完全相同的回合如果模型
+已经判过 `[SKIP]`，Host 侧 60 秒内直接回同一个结论（负缓存），不再调模型。
+`no-cache` 表示这条会话的回合已经结束很久（超过 10 分钟），重试也不会变出建议，所以不重试。
+
 **生成**（Host）：
 
 1. 客户端 `POST api/notch/predict`，只带 `sessionId`；Host 也可能在 `turn/end` 时主动生成；
@@ -73,7 +88,9 @@ Host（可靠兜底）：
 3. 用 `ctx.llm.stream()` 调模型：默认优先 `deepseek-account/deepseek-flash`，否则沿用
    会话最后一次 assistant 的 provider/model；
 4. 输出清洗：去 Markdown 围栏、角色前缀、首尾引号，压成一行，超长截断；模型回
-   `[SKIP]` 就当没有建议；
+   `[SKIP]` 就当没有建议。提示词只在「整段对话里一条用户消息都没有」时才允许 `[SKIP]`，
+   否则要求必须给一句——之前那句「没得预测就 [SKIP]」让 flash 在长对话里偷懒率接近四成，
+   是「有时候不出现」的主要原因；
 5. 同一会话同一回合去重缓存，同时最多 3 个模型调用。
 
 **展示**：`conversation.input.overlay` 列表 slot 里一层绝对定位的内容，盖在原
@@ -88,7 +105,7 @@ placeholder 上，同时给 composer 卡片加 `data-dsh-prediction` 隐藏原�
 prop `inputActions.setDraft(text)`，填完把焦点还给编辑器。任何失败都静默，不弹 toast。
 
 **取消**：开始输入、加附件、切换会话、提交、回合重新开始、插件卸载都会 abort 在途
-请求；Host 侧 `request.signal` 与 8s 超时一起终止模型流。
+请求（连同排队中的重试）一起清掉；Host 侧 `request.signal` 与 8s 超时一起终止模型流。
 
 ---
 
@@ -113,14 +130,17 @@ predictionMaxInputBytes: 12000
 ## 4. 成本与隐私
 
 - 余额环：只把用户自己的余额读进浏览器内存；不写日志、不上传。
-- 预测：每轮最多一次模型调用，输入是最近几轮对话的文本裁剪（默认 ≤ 12 KB），
+- 预测：正常情况下每轮最多一次模型调用，输入是最近几轮对话的文本裁剪（默认 ≤ 12 KB），
   不包含图片、附件内容、工具输出全文。调用发生在用户本机的 Host 进程，走用户已配置的
-  模型 provider，不经过第三方服务。
+  模型 provider，不经过第三方服务。重试都带 `cachedOnly`，Host 有缓存/负缓存时不会再调
+  模型；同一回合最多补 1～2 次。
 - 预测失败、额度不足、没有路由都只是「没有建议」，不会打断对话，也不会在聊天里留下记录。
-- 诊断日志只记状态（例：`预测：已生成（28 字，deepseek-account/deepseek-flash）`），
-  不记余额数字、不记建议正文。位置：
+- 诊断日志只记状态，不记余额数字、不记建议正文、不记建议内容。现在**每次跳过都会留一行**
+  `预测：跳过（原因）`（例如 `预测：跳过（model-skipped，finish=stop）`、
+  `预测：跳过（not-enough-context，12 个事件）`），所以「这次为什么没建议」可以直接看日志。
+  位置：
   `$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch-plugin.log`
-  和 `~/.dsh/notch/client-probe.log`。
+  和 `~/.dsh/notch/client-probe.log`（客户端跳过原因在 `prediction-skip` 阶段）。
 
 ---
 
@@ -130,11 +150,13 @@ predictionMaxInputBytes: 12000
 |---|---|
 | 没有余额环 | 是否在 agent 模式（DS Bot 的 Bot 模式下账号行被替换）；侧栏是否收起；是否已登录 |
 | 环是灰色 | 账号凭据失效、余额接口失败；tooltip 会写「余额读取失败」 |
-| 没有预测 | `prediction` 是否为 true；是否刚结束一轮（预测只在回合结束后请求）；输入框是否为空；日志里是否有 `预测：已注册 api/notch/predict` |
+| 没有预测 | 先看日志最后一行 `预测：…`：`已生成` 说明建议有了（看输入框是否为空/是否在跑）；`跳过（原因）` 直接说明原因；`开始关注会话` 说明客户端刚上报 |
+| 预测时有时无 | 看 `预测：跳过（model-skipped…）`（模型自己没给）还是 `not-enough-context` / `no-cache`（时机会重试，等 1～2 秒）；两者都已加日志，不再靠猜 |
 | 预测请求 404 | Host 插件没有重载；重启 DSH 或插件管理器里重新启用一次 |
 | 预测一直不出现且日志无记录 | 客户端插件没加载到新 bundle：刷新页面 / 重启 DSH |
 | Tab 没反应 | 建议是否真的可见；焦点是否在输入框；是否在 IME 组合状态 |
 
 **开发时**：`plugin/index.js` 是链接包源码，HMR 只在一次 profile 重组时替换它；
 `plugin/client.js` 改动可以直接热更新。`client-probe.log` 里会有 `apply` / `ring` /
-`prediction` 等阶段，可判断插件是否在跑、余额是否读到、预测请求是否发出。
+`prediction` / `prediction-skip` 等阶段，可判断插件是否在跑、余额是否读到、预测请求
+是否发出，以及每次跳过的原因。
