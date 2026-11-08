@@ -29,8 +29,8 @@
 > `https://raw.githubusercontent.com/hennysky/dsh-notch/main/plugin-index.json`
 > 即可在「发现」里安装/更新插件。国内可用
 > [Gitee 镜像](https://gitee.com/hennysky/dsh-notch/raw/main/plugin-index.json)；
-> 步骤见[插件索引安装](#plugin-index-install)。
-> 客户端新功能（余额环 / 输入预测）见[客户端增强](#client-enhancements)。
+> 步骤见[插件索引安装](#从插件索引安装推荐)。
+> 客户端新功能（余额环 / 输入预测）见[客户端增强](#客户端增强余额环--输入预测)。
 
 ---
 
@@ -246,7 +246,6 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | 日志里没有「已注册 3 个监听」 | 插件还是旧版：重启一次 DSH 加载新代码 |
 | 日志里 `HTTP 200 … shown:false` | 卡片设置里对应的开关被关了 |
 
-<a id="client-enhancements"></a>
 ### 客户端增强：余额环 + 输入预测
 
 装插件后，DeepSeek Harness 的客户端界面会多两件事（Web 与 Desktop 共用）：
@@ -327,7 +326,6 @@ DSH 自己的账号余额接口。实现、配置、排查与成本说明见 [do
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
 > 源码在 [`windows/`](windows/)，见 [plugin/README.md](plugin/README.md)。
 
-<a id="plugin-index-install"></a>
 ### 从插件索引安装（推荐）
 
 DSH 0.2.2+ 的「插件 → 发现」支持添加索引源，粘贴一次就可以在列表里直接安装/更新：

@@ -28,8 +28,8 @@ Four things:
 > `https://raw.githubusercontent.com/hennysky/dsh-notch/main/plugin-index.json`.
 > Then install or update the plugin from Discover. Use the
 > [Gitee mirror](https://gitee.com/hennysky/dsh-notch/raw/main/plugin-index.json) if GitHub is slow.
-> Steps: [plugin index install](#plugin-index-install). Client features:
-> [client enhancements](#client-enhancements).
+> Steps: [plugin index install](#install-from-the-plugin-index-recommended). Client features:
+> [client enhancements](#client-enhancements-balance-ring--composer-prediction).
 
 ---
 
@@ -259,7 +259,6 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | No "已注册 3 个监听" in the log | the plugin is still the old version: restart DSH once |
 | `HTTP 200 … shown:false` in the log | the matching toggle is off in the card settings |
 
-<a id="client-enhancements"></a>
 ### Client enhancements: balance ring + composer prediction
 
 With the plugin installed, the DeepSeek Harness client (Web and Desktop share the same UI) gains:
@@ -350,7 +349,6 @@ instead of launching it by hand.
 > Harness's own Electron notifications, then to a PowerShell toast. Source lives in
 > [`windows/`](windows/); see [plugin/README.md](plugin/README.md).
 
-<a id="plugin-index-install"></a>
 ### Install from the plugin index (recommended)
 
 DSH 0.2.2+ can read a plugin index from the **Settings → Plugins → Discover → Index sources**
