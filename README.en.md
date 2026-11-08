@@ -15,13 +15,21 @@
 | ![Notch mode](preview/balance.png) | ![Menu bar mode](preview/menubar.png) | ![Notification settings](preview/settings-notifications.png) |
 | Click the notch to expand | Falls back to the menu bar automatically | Task finished / needs attention, two switches |
 
-Three things:
+Four things:
 
 - **Balance**: click the notch (or the menu-bar item) to see the DeepSeek Harness balance; it alerts when the balance drops below a threshold or a single burn is unusually large.
 - **DSH notifications**: macOS notifications when a task finishes, fails, or the agent stops for your approval or answer. Click to switch back to DSH; the banner disappears, but the **red dot on the menu bar does not** — until you open the card.
 - **Starts with DSH**: one companion plugin launches it with DSH and bridges session events into notifications.
+- **Client enhancements**: a balance ring in the DSH sidebar account row and Codex-style next-message predictions in the composer.
 
 > Status: v1.7.0 (Windows 1.2.4 / plugin 1.7.1) · MIT · macOS 14+ · Apple Silicon — 14 human-free self-checks, plugin tests and real notification delivery all verified.
+
+> **New: install from the plugin index** — on DSH 0.2.2+, open `Settings → Plugins → Discover → Index sources → Add` and paste
+> `https://raw.githubusercontent.com/hennysky/dsh-notch/main/plugin-index.json`.
+> Then install or update the plugin from Discover. Use the
+> [Gitee mirror](https://gitee.com/hennysky/dsh-notch/raw/main/plugin-index.json) if GitHub is slow.
+> Steps: [plugin index install](#plugin-index-install). Client features:
+> [client enhancements](#client-enhancements).
 
 ---
 
@@ -251,6 +259,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | No "已注册 3 个监听" in the log | the plugin is still the old version: restart DSH once |
 | `HTTP 200 … shown:false` in the log | the matching toggle is off in the card settings |
 
+<a id="client-enhancements"></a>
 ### Client enhancements: balance ring + composer prediction
 
 With the plugin installed, the DeepSeek Harness client (Web and Desktop share the same UI) gains:
@@ -341,6 +350,7 @@ instead of launching it by hand.
 > Harness's own Electron notifications, then to a PowerShell toast. Source lives in
 > [`windows/`](windows/); see [plugin/README.md](plugin/README.md).
 
+<a id="plugin-index-install"></a>
 ### Install from the plugin index (recommended)
 
 DSH 0.2.2+ can read a plugin index from the **Settings → Plugins → Discover → Index sources**

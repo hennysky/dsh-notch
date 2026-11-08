@@ -15,14 +15,22 @@
 | ![刘海形态](preview/balance.png) | ![菜单栏形态](preview/menubar.png) | ![通知设置](preview/settings-notifications.png) |
 | 点刘海展开卡片 | 自动用菜单栏形态 | 任务完成 / 需要处理，两个开关 |
 
-三件事：
+四件事：
 
 - **余额**：点刘海（或菜单栏）就能看到 DeepSeek Harness 余额；跌破阈值、单次消耗过大时主动提醒。
 - **DSH 通知**：任务完成、失败、或 agent 停下来等你审批／回答时发 macOS 系统通知。点通知切回 DSH；
   横幅会消失，但菜单栏图标上的**红点不会**——直到你点开卡片。
 - **跟着 DSH 启动**：装一个配套插件，DSH 启动时自动拉起，并负责把会话事件转成通知。
+- **客户端增强**：DSH 侧栏账号行余额环 + 输入框 Codex 式下一句预测。
 
 > 状态：v1.7.0（Windows 1.2.4 / 插件 1.7.1）· MIT · macOS 14+ · Apple Silicon ｜ 14 项零人工自检、插件测试与真实通知投递均已实测
+
+> **新：插件索引安装** —— DSH 0.2.2+ 打开 `设置 → 插件 → 发现 → 索引源 → 添加`，粘贴
+> `https://raw.githubusercontent.com/hennysky/dsh-notch/main/plugin-index.json`
+> 即可在「发现」里安装/更新插件。国内可用
+> [Gitee 镜像](https://gitee.com/hennysky/dsh-notch/raw/main/plugin-index.json)；
+> 步骤见[插件索引安装](#plugin-index-install)。
+> 客户端新功能（余额环 / 输入预测）见[客户端增强](#client-enhancements)。
 
 ---
 
@@ -238,6 +246,7 @@ grep 通知 "$(node -e 'process.stdout.write(require("os").tmpdir())')/dsh-notch
 | 日志里没有「已注册 3 个监听」 | 插件还是旧版：重启一次 DSH 加载新代码 |
 | 日志里 `HTTP 200 … shown:false` | 卡片设置里对应的开关被关了 |
 
+<a id="client-enhancements"></a>
 ### 客户端增强：余额环 + 输入预测
 
 装插件后，DeepSeek Harness 的客户端界面会多两件事（Web 与 Desktop 共用）：
@@ -318,6 +327,7 @@ DSH 自己的账号余额接口。实现、配置、排查与成本说明见 [do
 > 没装托盘应用时退到 DeepSeek Harness 自己的 Electron 通知，再退到 PowerShell toast。
 > 源码在 [`windows/`](windows/)，见 [plugin/README.md](plugin/README.md)。
 
+<a id="plugin-index-install"></a>
 ### 从插件索引安装（推荐）
 
 DSH 0.2.2+ 的「插件 → 发现」支持添加索引源，粘贴一次就可以在列表里直接安装/更新：
