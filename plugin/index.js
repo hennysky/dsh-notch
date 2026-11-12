@@ -64,6 +64,7 @@ import {
   isPredictionReady,
   resolvePredictionRoute,
 } from './prediction.js'
+import { registerLidSleep } from './lid-sleep.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -88,6 +89,8 @@ export const DEFAULT_BRIDGE_PORT = 47810
 const BRIDGE_TIMEOUT_MS = 2000
 
 export const DEFAULTS = {
+  /** 执行过程跟踪：让模型每步先写一行判断，底部状态条据此显示当前步骤。 */
+  runTrace: true,
   /** macOS 伴侣应用位置。可以在 cordis.patch.yml 的 config 里改。 */
   appPath: '/Applications/DSHNotch.app',
   /** 插件卸载时是否同时收掉 macOS 伴侣应用。 */
@@ -145,6 +148,18 @@ export const DEFAULTS = {
   predictionTimeoutMs: 8000,
   /** 预测输入的 UTF-8 字节上限；超出从最早的对话开始丢。 */
   predictionMaxInputBytes: DEFAULT_MAX_INPUT_BYTES,
+  /**
+   * 合盖不休眠（仅 macOS）：把 `pmset -a disablesleep` 做成 agent 工具与设置页开关。
+   *
+   * 这是系统级开关（影响整机、合盖后仍耗电），所以默认值本身不是「打开」：
+   * 还要用户手工安装 root LaunchDaemon 才会有 helper 可用；没装时工具只报
+   * 「未安装」并给出安装命令，绝不会假装成功。
+   */
+  lidSleep: true,
+  /** `on` 的默认电源策略：ac-only=插电生效、拔电恢复合盖休眠；always=始终生效。 */
+  lidSleepStrategy: 'ac-only',
+  /** 等 root helper 写回执的超时（毫秒）；超时按失败返回，不猜结果。 */
+  lidSleepRequestTimeoutMs: 6000,
 }
 
 /** 根会话的标题/正文模板。未列出的 reason.kind 一律不通知。 */
@@ -1578,6 +1593,13 @@ export function resolveSettings(config, platform = process.platform) {
       Number(settings.predictionMaxInputBytes),
       DEFAULTS.predictionMaxInputBytes,
     ),
+    runTrace: settings.runTrace !== false,
+    lidSleep: settings.lidSleep !== false,
+    lidSleepStrategy: settings.lidSleepStrategy === 'always' ? 'always' : 'ac-only',
+    lidSleepRequestTimeoutMs: positiveInteger(
+      Number(settings.lidSleepRequestTimeoutMs),
+      DEFAULTS.lidSleepRequestTimeoutMs,
+    ),
   }
 }
 
@@ -1970,6 +1992,36 @@ function registerComposerPrediction(ctx, settings) {
  * @param runtime - 测试注入点：`{ platform }` 可覆盖 `process.platform`，
  *   让同一套测试在 Linux/Windows CI 上也能走 darwin / win32 分支。
  */
+/**
+ * 执行过程跟踪的提示词段。
+ *
+ * 只加一段很小的指令：每步工具调用前先写一行判断。底部状态条（Client 侧）
+ * 读的就是这行，所以它必须短——超过 20 字会在状态条里换行。
+ */
+const RUN_TRACE_SECTION = [
+  '[run-trace:intent-line]',
+  'Before each tool call, state the judgment for this step on its own line, then call the tool.',
+  'Format: `▸ 动作 · 理由`, at most 20 characters, Chinese unless the user writes another language.',
+  'The action names what you are about to do; the reason is one short phrase, not a sentence.',
+  'One line per step. Do not restate earlier lines, do not write a plan list, do not explain the format itself.',
+  'Only when a step will change files, data or scope, add `· 影响 ...` to the same line.',
+].join('\n')
+
+/** 注册提示词段；profile 里没有 systemPrompt 服务时静默跳过。 */
+function registerRunTrace(ctx) {
+  ctx.inject(['systemPrompt'], (scope) => {
+    scope.effect(
+      () =>
+        scope.systemPrompt.section({
+          name: 'notch/run-trace',
+          order: 900,
+          text: RUN_TRACE_SECTION,
+        }),
+      'notch.run-trace',
+    )
+  })
+}
+
 export function apply(ctx, config = {}, runtime = {}) {
   const settings = resolveSettings(config, runtime.platform ?? process.platform)
 
@@ -1978,6 +2030,15 @@ export function apply(ctx, config = {}, runtime = {}) {
     registerComposerPrediction(ctx, settings)
   } catch (error) {
     log(`预测：初始化失败（${describeError(error)}），已跳过`)
+  }
+
+  // 执行过程跟踪：独立开关，关掉后底部状态条不再出现判断行。
+  if (settings.runTrace) {
+    try {
+      registerRunTrace(ctx)
+    } catch (error) {
+      log(`执行跟踪：初始化失败（${describeError(error)}），已跳过`)
+    }
   }
 
   // 当前会话花费与通知彼此独立：即使关掉通知，也继续记录花费快照。
@@ -1995,6 +2056,17 @@ export function apply(ctx, config = {}, runtime = {}) {
       registerTokenActivity(ctx, settings)
     } catch (error) {
       log(`用量日历：初始化失败（${describeError(error)}），已跳过`)
+    }
+  }
+
+  // 合盖不休眠：只处理 macOS 的 `pmset -a disablesleep`。工具与设置页都要，
+  // 所以独立于通知开关；注册失败只记日志，绝不让宿主起不来。
+  if (settings.platform === 'darwin' && settings.lidSleep) {
+    try {
+      // 把本插件的 log 传进去，让「合盖不休眠」和通知/花费写同一份诊断日志。
+      registerLidSleep(ctx, { ...settings, log })
+    } catch (error) {
+      log(`合盖不休眠：初始化失败（${describeError(error)}），已跳过`)
     }
   }
 

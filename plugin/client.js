@@ -18,6 +18,7 @@ window.__ModuleLoader__.load({
   id: 'dsh-plugin-notch-balance',
   factory(require) {
     const React = require('react')
+    const ReactDOM = require('react-dom')
     const BRIDGE = 'http://127.0.0.1:47810'
 
     // ───────────────────────────────────────────────────────────
@@ -92,6 +93,9 @@ window.__ModuleLoader__.load({
 .dshn-pop-row .v{font-variant-numeric:tabular-nums;white-space:nowrap}
 .dshn-pop-divider{height:.5px;margin:6px 0;background:var(--dsw-alias-border-l3,rgba(127,127,127,.25))}
 .dshn-pop-foot{margin-top:6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#8a8f98)}
+.dshn-pop-footrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px}
+.dshn-pop-topup{display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:999px;border:0;background:var(--dsw-alias-button-elevated-fill,#3d3e44);color:var(--dsw-alias-label-primary,#e8e8ea);font:inherit;font-size:11px;line-height:16px;cursor:pointer}
+.dshn-pop-topup:hover{background:var(--dsw-alias-button-elevated-fill-hover,#4a4b52)}
 .dshn-ghost{position:absolute;top:12px;left:14px;right:8px;z-index:4;display:flex;align-items:center;gap:8px;pointer-events:none;user-select:none;color:var(--dsw-alias-label-caption);font-size:inherit;line-height:inherit;white-space:nowrap}
 .dshn-ghost-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.9}
 .dshn-tab{flex:none;font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;border:.5px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover);font-family:var(--ds-font-family-code,ui-monospace,monospace)}
@@ -101,6 +105,52 @@ window.__ModuleLoader__.load({
 @keyframes dshn-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
 [data-composer-card][data-dsh-prediction] [data-composer-placeholder]{visibility:hidden!important}
 @media (prefers-reduced-motion:reduce){.dshn-ring,.dshn-ring-arc,.dshn-pop{transition:none;animation:none!important}.dshn-loading-text{animation:none;background:none;color:var(--dsw-alias-label-caption)}.dshn-spinner{animation-duration:2s}}
+/* 设置页：合盖不休眠。沿用 DSH 自己的 design token，深浅色主题都跟着走。 */
+.dshn-lid{display:flex;flex-direction:column;width:100%;padding-top:18px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}
+.dshn-lid-head{display:flex;align-items:center;gap:8px;min-width:0}
+.dshn-lid-title{margin:0;font-size:16px;line-height:24px;font-weight:500}
+.dshn-lid-badge{display:inline-flex;flex:none;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;white-space:nowrap}
+.dshn-lid-badge[data-tone=on]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#2fb56a) 14%,transparent);color:var(--dsw-alias-state-success-primary,#2fb56a)}
+.dshn-lid-dot{flex:none;width:6px;height:6px;border-radius:50%;background:currentColor}
+.dshn-lid-desc{margin:6px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dshn-lid-status{margin-top:14px;border-top:.5px solid var(--dsw-alias-border-l2,rgba(127,127,127,.25))}
+.dshn-lid-row{display:flex;align-items:baseline;justify-content:space-between;gap:20px;padding:8px 0;border-bottom:.5px solid var(--dsw-alias-border-l2,rgba(127,127,127,.25))}
+.dshn-lid-row:last-child{border-bottom:none}
+.dshn-lid-row .k{flex:none;color:var(--dsw-alias-label-secondary)}
+.dshn-lid-row .v{min-width:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dshn-lid-row .v[data-tone=on]{color:var(--dsw-alias-state-success-primary,#2fb56a)}
+.dshn-lid-row .v[data-tone=warn]{color:var(--dsw-alias-state-warn-primary,#f5a524)}
+.dshn-lid-row .v[data-tone=error]{color:var(--dsw-alias-state-error-primary,#ef4444)}
+.dshn-lid-form{display:flex;flex-direction:column;gap:10px;margin-top:18px;padding-top:14px;border-top:.5px solid var(--dsw-alias-border-l2,rgba(127,127,127,.25))}
+.dshn-lid-form-label{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.dshn-lid-choice{display:flex;align-items:flex-start;gap:8px;min-width:0;cursor:pointer}
+.dshn-lid-choice input{flex:none;margin:3px 0 0;accent-color:var(--dsw-alias-state-business-primary,#4d6bfe)}
+.dshn-lid-choice-body{display:flex;flex-direction:column;min-width:0}
+.dshn-lid-choice-title{font-size:13px;line-height:20px}
+.dshn-lid-choice-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary,#8a8f98)}
+.dshn-lid-warn{margin-top:2px;padding:8px 10px;border-radius:var(--dsw-radius-md,8px);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#f5a524) 10%,transparent);color:var(--dsw-alias-state-warn-primary,#f5a524);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.dshn-lid-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:18px}
+.dshn-lid-spacer{flex:1 1 0;min-width:0}
+.dshn-lid-btn{display:inline-flex;align-items:center;justify-content:center;height:32px;padding:0 14px;border:.5px solid var(--dsw-alias-border-l3,rgba(127,127,127,.35));border-radius:var(--dsw-radius-md,8px);background:transparent;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;line-height:20px;white-space:nowrap;cursor:pointer}
+.dshn-lid-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.dshn-lid-btn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4d6bfe);outline-offset:2px}
+.dshn-lid-btn:disabled{opacity:.5;cursor:default}
+.dshn-lid-btn[data-variant=primary]{border-color:transparent;background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-state-business-primary,#4d6bfe));color:var(--dsw-alias-label-primary-foreground,#fff)}
+.dshn-lid-btn[data-variant=primary]:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,var(--dsw-alias-button-primary-fill,#4d6bfe))}
+.dshn-lid-btn[data-variant=ghost]{border-color:transparent;color:var(--dsw-alias-label-secondary)}
+.dshn-lid-btn[data-variant=ghost]:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dshn-lid-messages{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.dshn-lid-msg{padding:9px 11px;border-radius:var(--dsw-radius-md,8px);border:.5px solid transparent;font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.dshn-lid-msg[data-tone=ok]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#2fb56a) 10%,transparent);color:var(--dsw-alias-state-success-primary,#2fb56a)}
+.dshn-lid-msg[data-tone=error]{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#ef4444) 10%,transparent);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary,#ef4444) 28%,transparent);color:var(--dsw-alias-state-error-primary,#ef4444)}
+.dshn-lid-empty{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.dshn-lid-loading{display:flex;align-items:center;gap:8px;padding:12px 0;color:var(--dsw-alias-label-secondary)}
+.dshn-lid-callout{padding:12px 14px;border-radius:var(--dsw-radius-md,8px);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dshn-lid-callout[data-tone=warn]{color:var(--dsw-alias-state-warn-primary,#f5a524)}
+.dshn-lid-callout[data-tone=error]{color:var(--dsw-alias-state-error-primary,#ef4444)}
+.dshn-lid-callout-title{margin-bottom:4px;font-size:13px;line-height:20px;font-weight:500}
+.dshn-lid-callout-body{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dshn-lid-hint{margin:10px 0 0;color:var(--dsw-alias-label-tertiary,#8a8f98);font-size:12px;line-height:18px}
 `
 
     function ensureStyle() {
@@ -137,6 +187,7 @@ window.__ModuleLoader__.load({
           total: 'Total',
           popHint: 'DeepSeek account balance',
           unavailable: 'Balance unavailable',
+          topUp: 'Top up',
           failed: 'Could not read balance',
           filling: 'AI filling in…',
         }
@@ -151,8 +202,138 @@ window.__ModuleLoader__.load({
         total: '合计',
         popHint: 'DeepSeek 账号余额',
         unavailable: '余额不可用',
+        topUp: '充值',
         failed: '余额读取失败',
         filling: 'AI 填充中…',
+      }
+    }
+
+    /**
+     * 设置页「合盖不休眠」的文案。
+     *
+     * 默认中文（这个功能只在 macOS 上有意义）；英文只保证 label/title 等界面不出现
+     * 未翻译的空洞。文案集中在这里，和余额环的 localeStrings 保持同一种写法。
+     */
+    function lidSleepStrings(locale) {
+      if (String(locale).toLowerCase().startsWith('en')) {
+        return {
+          label: 'Lid Sleep',
+          title: 'Lid Sleep',
+          desc: 'Keep the system awake while the lid is closed. The built-in display still turns off when closed; this keeps the system awake and external displays on.',
+          refresh: 'Refresh',
+          retry: 'Retry',
+          on: 'Turn on',
+          off: 'Turn off',
+          busy: 'Working…',
+          loading: 'Reading status…',
+          unavailableTitle: 'Host side is not enabled (restart DSH to activate)',
+          unavailableHint: 'The settings page is loaded, but the Host has not registered the api/notch/lid-sleep route yet. Restart DSH and open this page again.',
+          loadFailed: 'Could not read status',
+          loadFailedHttp: (status) => `Could not read status (HTTP ${status})`,
+          actionFailedHttp: (status) => `Request failed (HTTP ${status})`,
+          requestFailed: 'Could not reach the Host',
+          reasonLabel: 'Reason',
+          resultFallback: 'The Host returned no detail.',
+          rowState: 'Lid behavior',
+          rowDesired: 'Configured',
+          rowPower: 'Power',
+          rowStrategy: 'Strategy',
+          rowDisplays: 'External displays',
+          rowKeepAwake: 'Keep display awake',
+          rowHelper: 'Helper',
+          rowTimers: 'Sleep timers',
+          stateOn: 'Lid stays awake',
+          stateOff: 'Normal sleep',
+          stateUnknown: 'Unknown',
+          stateOnRaw: (raw) => `Lid stays awake (SleepDisabled=${raw})`,
+          stateOffRaw: (raw) => `Normal sleep (SleepDisabled=${raw})`,
+          desiredOn: 'Turned on',
+          desiredOff: 'Turned off',
+          desiredUnknown: 'Not set',
+          powerAc: 'Plugged in',
+          powerBattery: 'On battery',
+          powerUnknown: 'Unknown',
+          strategyAcOnly: 'When plugged in (ac-only)',
+          strategyAlways: 'Always (always)',
+          strategyUnknown: 'Unknown',
+          displaysNone: 'None',
+          displaysCount: (count) => `${count}`,
+          helperReady: 'Installed and running',
+          helperStopped: 'Installed, not running',
+          helperMissing: 'Not installed',
+          keepAwakeOn: 'Enabled',
+          keepAwakeOff: 'Disabled',
+          timersText: (sleep, displaysleep) => `sleep ${sleep} min · display ${displaysleep} min`,
+          strategyLabel: 'Power strategy',
+          acOnlyOption: 'When plugged in',
+          acOnlyHint: 'On battery the lid closes into normal sleep. This is a plugin strategy, not a native macOS setting.',
+          alwaysOption: 'Always',
+          alwaysHint: 'Keeps the lid closed awake on battery too, which drains it faster.',
+          keepAwakeOption: 'Keep the display awake too',
+          keepAwakeHint: 'Changes the AC sleep / displaysleep timers; turning off or unchecking restores the backup.',
+          batteryWarning: 'On battery power: staying awake with the lid closed keeps draining. Turn it off before carrying the machine.',
+          unsupported: 'This machine is not macOS, so the feature is unavailable.',
+          helperMissingHint: 'The background helper is not installed yet: ask the agent to install it in chat, or run install.sh manually as described in docs/lid-sleep.md.',
+        }
+      }
+      return {
+        label: '合盖不休眠',
+        title: '合盖不休眠',
+        desc: '合盖时让系统保持唤醒。合盖时内置屏仍会熄灭；本功能保住的是「系统不睡 + 外接屏常亮」。',
+        refresh: '刷新',
+        retry: '重试',
+        on: '开启',
+        off: '关闭',
+        busy: '处理中…',
+        loading: '正在读取状态…',
+        unavailableTitle: 'Host 侧未启用（需重启 DSH 后生效）',
+        unavailableHint: '设置页已经加载，但 Host 还没注册 api/notch/lid-sleep 路由。重启 DSH 后再打开本页即可。',
+        loadFailed: '状态读取失败',
+        loadFailedHttp: (status) => `状态读取失败（HTTP ${status}）`,
+        actionFailedHttp: (status) => `操作失败（HTTP ${status}）`,
+        requestFailed: '请求 Host 失败',
+        reasonLabel: '原因',
+        resultFallback: 'Host 没有返回 detail。',
+        rowState: '合盖行为',
+        rowDesired: '用户设置',
+        rowPower: '电源',
+        rowStrategy: '策略',
+        rowDisplays: '外接屏',
+        rowKeepAwake: '同时不熄屏',
+        rowHelper: 'Helper',
+        rowTimers: '休眠计时器',
+        stateOn: '合盖不休眠',
+        stateOff: '正常休眠',
+        stateUnknown: '未知',
+        stateOnRaw: (raw) => `合盖不休眠（SleepDisabled=${raw}）`,
+        stateOffRaw: (raw) => `正常休眠（SleepDisabled=${raw}）`,
+        desiredOn: '已设为开启',
+        desiredOff: '已设为关闭',
+        desiredUnknown: '未设置',
+        powerAc: '已插电',
+        powerBattery: '电池供电',
+        powerUnknown: '未知',
+        strategyAcOnly: '插电生效（ac-only）',
+        strategyAlways: '始终生效（always）',
+        strategyUnknown: '未知',
+        displaysNone: '无',
+        displaysCount: (count) => `${count} 台`,
+        helperReady: '已安装并运行',
+        helperStopped: '已安装，未运行',
+        helperMissing: '未安装',
+        keepAwakeOn: '已启用',
+        keepAwakeOff: '未启用',
+        timersText: (sleep, displaysleep) => `休眠 ${sleep} 分钟 · 熄屏 ${displaysleep} 分钟`,
+        strategyLabel: '电源策略',
+        acOnlyOption: '插电生效',
+        acOnlyHint: '拔电后合盖仍会正常休眠。这是插件策略，不是系统原生能力。',
+        alwaysOption: '始终生效',
+        alwaysHint: '电池供电时也会保持唤醒，耗电更快。',
+        keepAwakeOption: '同时不熄屏',
+        keepAwakeHint: '会修改 AC 的 sleep / displaysleep；关闭或取消勾选时按备份恢复。',
+        batteryWarning: '当前是电池供电：合盖保持唤醒会持续耗电，带走前建议先关闭。',
+        unsupported: '本机不是 macOS，无法使用该功能。',
+        helperMissingHint: '后台 helper 还没安装：可以在对话里让 agent 安装，或参考 docs/lid-sleep.md 手工运行 install.sh。',
       }
     }
 
@@ -522,10 +703,24 @@ window.__ModuleLoader__.load({
         const updated = formatTimeSeconds(detail.updatedAt)
         if (updated !== '') popover.appendChild(popoverRow(L.updatedAt, updated))
 
+        const footRow = document.createElement('div')
+        footRow.className = 'dshn-pop-footrow'
         const foot = document.createElement('div')
         foot.className = 'dshn-pop-foot'
+        foot.style.marginTop = '0'
         foot.textContent = view.state === 'ready' ? L.popHint : view.title ?? L.failed
-        popover.appendChild(foot)
+        footRow.appendChild(foot)
+
+        // 充值入口：系统浏览器打开，沿用那边的登录态；链接不带任何 token。
+        const topUp = document.createElement('button')
+        topUp.type = 'button'
+        topUp.className = 'dshn-pop-topup'
+        topUp.textContent = L.topUp
+        topUp.addEventListener('click', () => {
+          window.open('https://platform.deepseek.com/top_up', '_blank', 'noopener,noreferrer')
+        })
+        footRow.appendChild(topUp)
+        popover.appendChild(footRow)
       }
 
       const openPopover = () => {
@@ -1332,6 +1527,511 @@ window.__ModuleLoader__.load({
     }
 
     // ───────────────────────────────────────────────────────────
+    // 设置页：合盖不休眠（macOS pmset disablesleep）
+    //
+    // 页面只在被真正打开时请求 Host：挂载 GET 一次状态，开关走 POST，操作完再 GET
+    // 同步。Host 侧路由由 plugin/lid-sleep.js 注册；Host 没重启 / 没注册时这里会
+    // 404，显示「Host 侧未启用」而不是报错。成败只看 Host 返回的 ok/reason/detail，
+    // 客户端不因为 HTTP 200 或按钮点过就自己判成功。
+    // ───────────────────────────────────────────────────────────
+
+    /** Host 路由：同源相对路径（浏览器 bundle，没有 Node API；和余额环/预测同写法）。 */
+    const LID_SLEEP_ENDPOINT = 'api/notch/lid-sleep'
+    /** POST 在 Host 侧最多等 helper 回执 6s 再 pmset 读回，留足余量再判超时。 */
+    const LID_SLEEP_ACTION_TIMEOUT_MS = 20_000
+    const LID_SLEEP_STATUS_TIMEOUT_MS = 12_000
+
+    /** 带超时的同源 JSON 请求；返回 HTTP 状态与解析后的 body，网络错误往上抛。 */
+    async function requestLidSleep(url, init, timeoutMs) {
+      const controller = new AbortController()
+      const timer = window.setTimeout(function () {
+        try {
+          controller.abort()
+        } catch (error) {}
+      }, timeoutMs)
+      try {
+        const response = await window.fetch(
+          url,
+          Object.assign({ credentials: 'same-origin', cache: 'no-store' }, init, {
+            signal: controller.signal,
+          }),
+        )
+        let payload = null
+        try {
+          payload = await response.json()
+        } catch (error) {
+          payload = null
+        }
+        return { httpStatus: response.status, httpOk: response.ok, payload }
+      } finally {
+        window.clearTimeout(timer)
+      }
+    }
+
+    /** 非 2xx 时优先显示 Host 返回的 detail/error 原文（路由失败会给 error 字段）。 */
+    function hostErrorText(response, fallback) {
+      const payload = response?.payload
+      if (payload !== null && typeof payload === 'object') {
+        if (typeof payload.detail === 'string' && payload.detail !== '') return payload.detail
+        if (typeof payload.error === 'string' && payload.error !== '') return payload.error
+      }
+      return fallback
+    }
+
+    /**
+     * Status 字段 → 设置页展示值。
+     *
+     * 严格按 §4 的 Status 契约取值：缺字段 / null 一律显示「未知」，绝不按默认值猜。
+     * tone 只影响颜色：on=绿、warn=琥珀、error=红。
+     */
+    function lidSleepViews(L, status) {
+      const value = status !== null && typeof status === 'object' ? status : {}
+      const sleepDisabled = value.sleepDisabled
+      const desired = typeof value.desired === 'string' ? value.desired : 'unknown'
+      const power = typeof value.powerSource === 'string' ? value.powerSource : 'unknown'
+      const strategy = typeof value.strategy === 'string' ? value.strategy : 'unknown'
+      const externalDisplays = value.externalDisplays
+      const helperInstalled = value.helperInstalled === true
+      const helperRunning = value.helperRunning === true
+      const sleep = value.sleep
+      const displaysleep = value.displaysleep
+
+      return {
+        state:
+          sleepDisabled === 1
+            ? { text: L.stateOnRaw(1), short: L.stateOn, tone: 'on' }
+            : sleepDisabled === 0
+              ? { text: L.stateOffRaw(0), short: L.stateOff, tone: 'off' }
+              : { text: L.stateUnknown, short: L.stateUnknown, tone: 'unknown' },
+        desired:
+          desired === 'on'
+            ? { text: L.desiredOn, tone: 'on' }
+            : desired === 'off'
+              ? { text: L.desiredOff, tone: 'off' }
+              : { text: L.desiredUnknown, tone: 'unknown' },
+        power:
+          power === 'ac'
+            ? { text: L.powerAc, tone: 'on' }
+            : power === 'battery'
+              ? { text: L.powerBattery, tone: 'warn' }
+              : { text: L.powerUnknown, tone: 'unknown' },
+        strategy:
+          strategy === 'ac-only'
+            ? { text: L.strategyAcOnly, tone: 'off' }
+            : strategy === 'always'
+              ? { text: L.strategyAlways, tone: 'off' }
+              : { text: L.strategyUnknown, tone: 'unknown' },
+        displays:
+          typeof externalDisplays === 'number' && Number.isFinite(externalDisplays)
+            ? externalDisplays > 0
+              ? { text: L.displaysCount(externalDisplays), tone: 'off' }
+              : { text: L.displaysNone, tone: 'off' }
+            : { text: L.stateUnknown, tone: 'unknown' },
+        keepAwake:
+          value.keepDisplayAwake === true
+            ? { text: L.keepAwakeOn, tone: 'on' }
+            : { text: L.keepAwakeOff, tone: 'off' },
+        helper:
+          helperInstalled && helperRunning
+            ? { text: L.helperReady, tone: 'on' }
+            : helperInstalled
+              ? { text: L.helperStopped, tone: 'warn' }
+              : { text: L.helperMissing, tone: 'warn' },
+        timers:
+          typeof sleep === 'number' && Number.isFinite(sleep) && typeof displaysleep === 'number' && Number.isFinite(displaysleep)
+            ? { text: L.timersText(sleep, displaysleep), tone: 'off' }
+            : null,
+      }
+    }
+
+    /**
+     * 设置页里的「合盖不休眠」。
+     *
+     * props.strings 返回当前 locale 的文案（由 apply 里的注册闭包提供）：
+     * 组件本身不依赖任何 slot prop，设置页外壳传不传 close 都能渲染。
+     */
+    function LidSleepSettings(props) {
+      const L = typeof props?.strings === 'function' ? props.strings() : lidSleepStrings('zh')
+      const el = React.createElement
+
+      const [phase, setPhase] = React.useState('loading') // loading | ready | unavailable | failed
+      const [status, setStatus] = React.useState(null)
+      const [loadError, setLoadError] = React.useState('')
+      const [result, setResult] = React.useState(null)
+      const [busy, setBusy] = React.useState('') // '' | 'on' | 'off' | 'refresh'
+      const [draft, setDraft] = React.useState({ strategy: 'ac-only', keepDisplayAwake: false })
+
+      const alive = React.useRef(true)
+      const dirty = React.useRef(false)
+      /** 同步的在途标记：按钮 disabled 要等下一次 render，连续点击时用 ref 挡住第二次 POST。 */
+      const inFlightRef = React.useRef('')
+      const loadingRef = React.useRef(false)
+      const statusRef = React.useRef(null)
+
+      const applyStatus = (next) => {
+        statusRef.current = next
+        setStatus(next)
+        // 用户正在改选项时不要被后台刷新覆盖；刷新成功后（dirty 清掉）再对齐服务端状态。
+        if (next !== null && dirty.current !== true) {
+          setDraft({
+            strategy: next.strategy === 'always' ? 'always' : 'ac-only',
+            keepDisplayAwake: next.keepDisplayAwake === true,
+          })
+        }
+      }
+
+      /** 读一次状态。404 / 网络错误 = Host 侧没启用（友好提示）；其它 HTTP 错误 = 红字。 */
+      const load = async () => {
+        if (loadingRef.current) return
+        loadingRef.current = true
+        try {
+          const response = await requestLidSleep(LID_SLEEP_ENDPOINT, { method: 'GET' }, LID_SLEEP_STATUS_TIMEOUT_MS)
+          if (!alive.current) return
+          if (response.httpStatus === 404) {
+            applyStatus(null)
+            setPhase('unavailable')
+            setLoadError('')
+            return
+          }
+          if (!response.httpOk) {
+            // Host 的 500/400 会带 error 文本；优先显示原文，再退回 HTTP 状态。
+            setLoadError(hostErrorText(response, L.loadFailedHttp(response.httpStatus)))
+            if (statusRef.current === null) setPhase('failed')
+            return
+          }
+          const payload = response.payload
+          if (payload === null || typeof payload !== 'object' || payload.ok !== true) {
+            setLoadError(typeof payload?.error === 'string' && payload.error !== '' ? payload.error : L.loadFailed)
+            if (statusRef.current === null) setPhase('failed')
+            return
+          }
+          applyStatus(payload)
+          setPhase('ready')
+          setLoadError('')
+        } catch (error) {
+          if (!alive.current) return
+          // fetch 抛错通常就是 Host 不可达（没重启 / 端口变了），按「未启用」处理，不崩。
+          applyStatus(null)
+          setPhase('unavailable')
+          setLoadError('')
+        } finally {
+          loadingRef.current = false
+        }
+      }
+
+      /** 刷新按钮：只读，不写请求文件。 */
+      const refresh = () => {
+        if (inFlightRef.current !== '' || loadingRef.current) return
+        inFlightRef.current = 'refresh'
+        setBusy('refresh')
+        setLoadError('')
+        void load().finally(function () {
+          inFlightRef.current = ''
+          if (alive.current) setBusy('')
+        })
+      }
+
+      /** 开启/关闭：POST 后无论成败都重新 GET，界面只信 Host 的 ok/reason/detail。 */
+      const run = async (action) => {
+        if (inFlightRef.current !== '' || loadingRef.current) return
+        inFlightRef.current = action
+        setBusy(action)
+        setResult(null)
+        setLoadError('')
+        try {
+          const response = await requestLidSleep(
+            LID_SLEEP_ENDPOINT,
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                action,
+                strategy: draft.strategy === 'always' ? 'always' : 'ac-only',
+                keepDisplayAwake: draft.keepDisplayAwake === true,
+              }),
+            },
+            LID_SLEEP_ACTION_TIMEOUT_MS,
+          )
+          if (!alive.current) return
+          if (response.httpStatus === 404) {
+            setLoadError(L.unavailableTitle)
+            if (statusRef.current === null) setPhase('unavailable')
+            return
+          }
+          if (!response.httpOk) {
+            const detail = hostErrorText(response, L.actionFailedHttp(response.httpStatus))
+            setResult({ ok: false, detail, reason: '', warnings: [] })
+            return
+          }
+          const payload = response.payload
+          if (payload === null || typeof payload !== 'object') {
+            setResult({ ok: false, detail: L.loadFailed, reason: '', warnings: [] })
+            return
+          }
+          setResult({
+            ok: payload.ok === true,
+            detail: typeof payload.detail === 'string' ? payload.detail : '',
+            reason: typeof payload.reason === 'string' ? payload.reason : '',
+            warnings: Array.isArray(payload.warnings)
+              ? payload.warnings.filter(function (line) {
+                  return typeof line === 'string' && line !== ''
+                })
+              : [],
+          })
+          // 结果以 Host 为准；这次 GET 只用来同步界面显示的系统状态。
+          dirty.current = false
+          await load()
+        } catch (error) {
+          if (!alive.current) return
+          setResult({
+            ok: false,
+            detail: `${L.requestFailed}：${String(error?.message ?? error)}`,
+            reason: '',
+            warnings: [],
+          })
+        } finally {
+          inFlightRef.current = ''
+          if (alive.current) setBusy('')
+        }
+      }
+
+      // 设置页真正打开（组件挂载）时才请求；卸载后不再 setState。
+      React.useEffect(function () {
+        alive.current = true
+        // 诊断：设置页每打开一次记一行，方便确认「打开设置才请求」这条约定真的生效。
+        probe('lid-sleep-settings-mount', {})
+        void load()
+        return function () {
+          alive.current = false
+        }
+      }, [])
+
+      const views = lidSleepViews(L, status)
+      const unsupported = status !== null && typeof status.platform === 'string' && status.platform !== 'darwin'
+      const actionDisabled = busy !== '' || unsupported === true
+
+      const head = el(
+        'div',
+        { className: 'dshn-lid-head' },
+        el('h3', { className: 'dshn-lid-title' }, L.title),
+        status === null
+          ? null
+          : el(
+              'span',
+              { className: 'dshn-lid-badge', 'data-tone': views.state.tone },
+              el('span', { className: 'dshn-lid-dot', 'aria-hidden': 'true' }),
+              views.state.short ?? views.state.text,
+            ),
+      )
+
+      const statusRow = (key, label, view) =>
+        el(
+          'div',
+          { className: 'dshn-lid-row', key },
+          el('span', { className: 'k' }, label),
+          el('span', { className: 'v', 'data-tone': view.tone }, view.text),
+        )
+
+      const renderStatus = () => {
+        const rows = [
+          statusRow('state', L.rowState, views.state),
+          statusRow('desired', L.rowDesired, views.desired),
+          statusRow('power', L.rowPower, views.power),
+          statusRow('strategy', L.rowStrategy, views.strategy),
+          statusRow('displays', L.rowDisplays, views.displays),
+          statusRow('keep', L.rowKeepAwake, views.keepAwake),
+          statusRow('helper', L.rowHelper, views.helper),
+        ]
+        if (views.timers !== null) rows.push(statusRow('timers', L.rowTimers, views.timers))
+        return el('div', { className: 'dshn-lid-status' }, rows)
+      }
+
+      const strategyChoice = (value, title, hint) =>
+        el(
+          'label',
+          { className: 'dshn-lid-choice', key: value },
+          el('input', {
+            type: 'radio',
+            name: 'dshn-lid-strategy',
+            value,
+            checked: draft.strategy === value,
+            disabled: actionDisabled,
+            onChange: () => {
+              dirty.current = true
+              setDraft((previous) => Object.assign({}, previous, { strategy: value }))
+            },
+          }),
+          el(
+            'span',
+            { className: 'dshn-lid-choice-body' },
+            el('span', { className: 'dshn-lid-choice-title' }, title),
+            el('span', { className: 'dshn-lid-choice-hint' }, hint),
+          ),
+        )
+
+      const form = el(
+        'div',
+        { className: 'dshn-lid-form' },
+        el('div', { className: 'dshn-lid-form-label' }, L.strategyLabel),
+        strategyChoice('ac-only', L.acOnlyOption, L.acOnlyHint),
+        strategyChoice('always', L.alwaysOption, L.alwaysHint),
+        el(
+          'label',
+          { className: 'dshn-lid-choice' },
+          el('input', {
+            type: 'checkbox',
+            checked: draft.keepDisplayAwake === true,
+            disabled: actionDisabled,
+            onChange: (event) => {
+              dirty.current = true
+              const checked = event?.target?.checked === true
+              setDraft((previous) => Object.assign({}, previous, { keepDisplayAwake: checked }))
+            },
+          }),
+          el(
+            'span',
+            { className: 'dshn-lid-choice-body' },
+            el('span', { className: 'dshn-lid-choice-title' }, L.keepAwakeOption),
+            el('span', { className: 'dshn-lid-choice-hint' }, L.keepAwakeHint),
+          ),
+        ),
+        // 电池供电时保持唤醒是持续耗电的：状态行给琥珀色之外，再单独提醒一句。
+        views.power.tone === 'warn'
+          ? el('div', { className: 'dshn-lid-warn', role: 'note' }, `⚠ ${L.batteryWarning}`)
+          : null,
+      )
+
+      const actions = el(
+        'div',
+        { className: 'dshn-lid-actions' },
+        el(
+          'button',
+          {
+            type: 'button',
+            className: 'dshn-lid-btn',
+            'data-variant': 'primary',
+            disabled: actionDisabled,
+            onClick: () => {
+              void run('on')
+            },
+          },
+          busy === 'on' ? L.busy : L.on,
+        ),
+        el(
+          'button',
+          {
+            type: 'button',
+            className: 'dshn-lid-btn',
+            disabled: actionDisabled,
+            onClick: () => {
+              void run('off')
+            },
+          },
+          busy === 'off' ? L.busy : L.off,
+        ),
+        el('span', { className: 'dshn-lid-spacer' }),
+        el(
+          'button',
+          {
+            type: 'button',
+            className: 'dshn-lid-btn',
+            'data-variant': 'ghost',
+            disabled: busy !== '' || unsupported === true,
+            onClick: refresh,
+          },
+          busy === 'refresh' ? L.busy : L.refresh,
+        ),
+      )
+
+      const messageNodes = []
+      if (result !== null) {
+        const tone = result.ok === true ? 'ok' : 'error'
+        const detail =
+          result.detail !== ''
+            ? result.detail
+            : result.reason !== ''
+              ? `${L.reasonLabel}：${result.reason}`
+              : L.resultFallback
+        messageNodes.push(
+          el(
+            'div',
+            { className: 'dshn-lid-msg', 'data-tone': tone, role: tone === 'error' ? 'alert' : 'status', key: 'result' },
+            detail,
+          ),
+        )
+        result.warnings.forEach((line, index) => {
+          messageNodes.push(el('div', { className: 'dshn-lid-warn', role: 'note', key: `warning-${index}` }, `⚠ ${line}`))
+        })
+      }
+      if (loadError !== '') {
+        messageNodes.push(
+          el('div', { className: 'dshn-lid-msg', 'data-tone': 'error', role: 'alert', key: 'load-error' }, loadError),
+        )
+      }
+      if (status !== null && typeof status.error === 'string' && status.error !== '') {
+        messageNodes.push(
+          el('div', { className: 'dshn-lid-msg', 'data-tone': 'error', role: 'alert', key: 'status-error' }, status.error),
+        )
+      }
+      if (unsupported) {
+        messageNodes.push(
+          el('div', { className: 'dshn-lid-msg', 'data-tone': 'error', role: 'alert', key: 'unsupported' }, L.unsupported),
+        )
+      }
+      const messages = messageNodes.length === 0 ? null : el('div', { className: 'dshn-lid-messages' }, messageNodes)
+
+      let body
+      if (status === null) {
+        // 还没拿到状态：加载中 / Host 未启用 / 读取失败，三种都只渲染提示，不渲染开关。
+        const empty =
+          phase === 'loading'
+            ? el('div', { className: 'dshn-lid-loading' }, el('span', { className: 'dshn-spinner' }), el('span', null, L.loading))
+            : el(
+                'div',
+                { className: 'dshn-lid-callout', 'data-tone': phase === 'unavailable' ? 'warn' : 'error' },
+                el(
+                  'div',
+                  { className: 'dshn-lid-callout-title' },
+                  phase === 'unavailable' ? L.unavailableTitle : loadError !== '' ? loadError : L.loadFailed,
+                ),
+                phase === 'unavailable' ? el('div', { className: 'dshn-lid-callout-body' }, L.unavailableHint) : null,
+              )
+        body = el(
+          'div',
+          { className: 'dshn-lid-empty' },
+          empty,
+          el(
+            'div',
+            { className: 'dshn-lid-actions' },
+            el(
+              'button',
+              {
+                type: 'button',
+                className: 'dshn-lid-btn',
+                disabled: busy !== '' || phase === 'loading',
+                onClick: refresh,
+              },
+              busy === 'refresh' ? L.busy : L.retry,
+            ),
+          ),
+          messages,
+        )
+      } else {
+        body = el(
+          'div',
+          null,
+          renderStatus(),
+          form,
+          actions,
+          messages,
+          status.helperInstalled !== true ? el('p', { className: 'dshn-lid-hint' }, L.helperMissingHint) : null,
+        )
+      }
+
+      return el('div', { className: 'dshn-lid' }, head, el('p', { className: 'dshn-lid-desc' }, L.desc), body)
+    }
+
+    // ───────────────────────────────────────────────────────────
     // 原功能：把「当前正在看的会话」上报给 Host / 刘海应用
     // ───────────────────────────────────────────────────────────
 
@@ -1360,11 +2060,318 @@ window.__ModuleLoader__.load({
       return null
     }
 
+    // ───────────────────────────────────────────────────────────
+    // 执行过程跟踪：底部状态条 + 步骤时间线
+    // ───────────────────────────────────────────────────────────
+
+    const RT_CSS = [
+      '.dshn-rt{display:inline-flex;flex-wrap:nowrap;align-items:center;gap:2px 7px;min-width:0;max-width:min(52ch,54vw);white-space:nowrap;padding:2px 5px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:11.5px;line-height:1.5;cursor:pointer;text-align:left;white-space:normal}',
+      '.dshn-rt:hover{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}',
+      '.dshn-rt-dot{width:6px;height:6px;flex:0 0 auto;border-radius:50%;background:var(--dsw-alias-brand-primary);animation:dshn-rt-pulse 1.4s ease-in-out infinite}',
+      '.dshn-rt-dot-idle{animation:none;background:var(--dsw-alias-state-success-primary)}',
+      '.dshn-rt-label{min-width:0;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dsw-alias-label-primary)}',
+      '.dshn-rt-meta{flex:0 0 auto;margin-left:auto;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:11px}',
+      '.dshn-rt-panel{position:fixed;z-index:2147483000;width:min(440px,92vw);max-height:52vh;display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 12px 32px rgba(0,0,0,.3);overflow:hidden}',
+      '.dshn-rt-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}',
+      '.dshn-rt-title{font-size:13px;font-weight:600}',
+      '.dshn-rt-headmeta{font-size:12px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}',
+      '.dshn-rt-body{overflow:auto;padding:6px 0}',
+      '.dshn-rt-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 12px;font-size:12.5px}',
+      '.dshn-rt-row:hover{background:var(--dsw-alias-bg-layer-2)}',
+      '.dshn-rt-rowlabel{display:inline-flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.dshn-rt-step{flex:0 0 auto;min-width:16px;height:16px;padding:0 5px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:10.5px;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}',
+      '.dshn-rt-time{flex:0 0 auto;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}',
+      '.dshn-rt-live .dshn-rt-rowlabel{color:var(--dsw-alias-brand-primary)}',
+      '.dshn-rt-empty{padding:14px 12px;font-size:12.5px;color:var(--dsw-alias-label-secondary)}',
+      '.dshn-rt-hint{padding:8px 12px;border-top:1px solid var(--dsw-alias-border-l1);font-size:11.5px;color:var(--dsw-alias-label-secondary)}',
+      '@keyframes dshn-rt-pulse{0%,100%{opacity:1}50%{opacity:.35}}',
+      '@media (prefers-reduced-motion: reduce){.dshn-rt-dot{animation:none}}',
+    ].join('\n')
+
+    function rtElapsed(ms) {
+      if (!(ms > 0)) return null
+      const total = Math.floor(ms / 1000)
+      const s = total % 60
+      const m = Math.floor(total / 60) % 60
+      const h = Math.floor(total / 3600)
+      const pad = (n) => (n < 10 ? '0' + n : String(n))
+      if (h > 0) return h + ':' + pad(m) + ':' + pad(s)
+      if (m > 0) return m + ':' + pad(s)
+      return s + 's'
+    }
+
+    function rtTextOf(blocks) {
+      if (!Array.isArray(blocks)) return ''
+      let out = ''
+      for (const block of blocks) {
+        if (!block || typeof block !== 'object') continue
+        const kind = block.kind || block.type
+        if (kind !== 'text' || typeof block.text !== 'string') continue
+        out += block.text + '\n'
+      }
+      return out
+    }
+
+    function rtJudgmentOf(blocks) {
+      const text = rtTextOf(blocks)
+      if (text === '') return null
+      const lines = text.split('\n')
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const match = /^[▸►▶>]\s*(.+)$/.exec(lines[i].trim())
+        if (match && match[1].trim() !== '') return match[1].trim()
+      }
+      return null
+    }
+
+    function rtName(call) {
+      if (!call || typeof call !== 'object') return null
+      const value = call.name || call.toolName || call.wireName
+      return typeof value === 'string' && value !== '' ? value : null
+    }
+
+    function rtRow(entry) {
+      if (!entry || typeof entry !== 'object') return null
+      if (entry.running) {
+        const name = rtName(entry.running)
+        return {
+          key: 'run-' + (entry.running.callId || entry.anchorSeq),
+          label: name ? '正在执行 · ' + name : '运行中',
+          at: null,
+          live: true,
+        }
+      }
+      const node = entry.node
+      if (!node || typeof node !== 'object') return null
+      const key = 'n-' + (node.key || node.seq || entry.anchorSeq)
+      const at = typeof node.time === 'number' ? node.time : null
+      switch (node.kind) {
+        case 'assistant': {
+          const judgment = rtJudgmentOf(node.blocks)
+          return {
+            key,
+            label: judgment || (typeof node.step === 'number' ? '模型第 ' + node.step + ' 步' : '模型输出'),
+            at,
+            live: false,
+            step: typeof node.step === 'number' ? node.step : null,
+          }
+        }
+        case 'tool-result': {
+          const name = rtName(node.data && node.data.call) || rtName(node)
+          return { key, label: name ? '工具完成 · ' + name : '工具完成', at, live: false }
+        }
+        case 'model-retry':
+          return { key, label: '重试模型请求', at, live: false }
+        case 'turn-error':
+          return { key, label: '出错', at, live: false }
+        case 'turn-max-tokens':
+          return { key, label: '达到输出上限', at, live: false }
+        default:
+          return null
+      }
+    }
+
+    function useRunTrace(useChat) {
+      const nodes = useChat((state) => (state && state.legacy ? state.legacy.nodes : undefined))
+      const running = useChat((state) => (state && state.legacy ? state.legacy.runningCalls : undefined))
+      const partial = useChat((state) => (state && state.legacy ? state.legacy.partial : undefined))
+      const timings = useChat((state) => (state && state.legacy ? state.legacy.turnTimings : undefined))
+
+      const calls = Array.isArray(running) ? running : []
+      const isRunning = calls.length > 0 || Boolean(partial)
+      const turn =
+        partial && typeof partial.turn === 'number'
+          ? partial.turn
+          : calls.length > 0 && typeof calls[0].turn === 'number'
+            ? calls[0].turn
+            : null
+
+      let steps = 0
+      if (Array.isArray(nodes)) {
+        for (const node of nodes) {
+          if (node && node.kind === 'assistant' && (turn === null || node.turn === turn)) steps += 1
+        }
+      }
+
+      const started =
+        turn !== null && timings && typeof timings.get === 'function'
+          ? (timings.get(turn) || {}).startTime
+          : undefined
+
+      const [now, setNow] = React.useState(() => Date.now())
+      React.useEffect(() => {
+        if (!isRunning) return undefined
+        const id = window.setInterval(() => setNow(Date.now()), 1000)
+        return () => window.clearInterval(id)
+      }, [isRunning])
+
+      const spend = typeof started === 'number' && isRunning ? rtElapsed(now - started) : null
+
+      const rows = []
+      if (Array.isArray(nodes)) {
+        for (const node of nodes.slice(-40)) {
+          const row = rtRow({ node: node, anchorSeq: node && node.seq })
+          if (row) rows.push(row)
+        }
+      }
+      for (let i = calls.length - 1; i >= 0; i -= 1) {
+        const row = rtRow({ running: calls[i], anchorSeq: 'live' + i })
+        if (row) rows.push(row)
+      }
+
+      const live = partial ? rtJudgmentOf(partial.blocks) : null
+      let last = null
+      if (Array.isArray(nodes)) {
+        for (let i = nodes.length - 1; i >= 0; i -= 1) {
+          const node = nodes[i]
+          if (!node || node.kind !== 'assistant') continue
+          last = rtJudgmentOf(node.blocks)
+          if (last) break
+        }
+      }
+
+      return {
+        isRunning,
+        spend,
+        step: steps + 1,
+        judgment: live || last,
+        tool: rtName(calls[0]),
+        rows: rows.slice(-24),
+      }
+    }
+
+    function RunTracePill(props) {
+      const useChat = props.useChat
+      const run = useRunTrace(typeof useChat === 'function' ? useChat : () => undefined)
+      const [open, setOpen] = React.useState(false)
+      const [anchor, setAnchor] = React.useState(null)
+      const rootRef = React.useRef(null)
+
+      if (!run.isRunning) return null
+
+      const head = run.judgment || run.tool || '运行中'
+      const meta = [run.spend, '第 ' + run.step + ' 步'].filter(Boolean).join(' · ')
+
+      const toggle = () => {
+        if (open) {
+          setOpen(false)
+          return
+        }
+        const node = rootRef.current
+        if (node && node.getBoundingClientRect) {
+          const box = node.getBoundingClientRect()
+          setAnchor({
+            left: Math.max(12, Math.round(box.left)),
+            bottom: Math.round(window.innerHeight - box.top + 10),
+          })
+        }
+        setOpen(true)
+      }
+
+      const children = [
+        React.createElement('span', { key: 'dot', className: 'dshn-rt-dot', 'aria-hidden': 'true' }),
+        React.createElement('span', { key: 'label', className: 'dshn-rt-label' }, head),
+        meta ? React.createElement('span', { key: 'meta', className: 'dshn-rt-meta' }, meta) : null,
+      ]
+
+      const element = React.createElement(
+        'span',
+        { ref: rootRef, className: 'dshn-rt-anchor' },
+        React.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshn-rt',
+            onClick: toggle,
+            'aria-expanded': open ? 'true' : 'false',
+            title: '运行中 · ' + head + ' · ' + meta,
+          },
+          children,
+        ),
+        open
+          ? ReactDOM.createPortal(
+              React.createElement(
+                'div',
+                {
+                  className: 'dshn-rt-panel',
+                  role: 'dialog',
+                  style: anchor
+                    ? { left: anchor.left + 'px', bottom: anchor.bottom + 'px' }
+                    : { left: '50%', bottom: '160px', transform: 'translateX(-50%)' },
+                },
+                React.createElement(
+                  'div',
+                  { className: 'dshn-rt-head' },
+                  React.createElement('span', { className: 'dshn-rt-title' }, '执行过程'),
+                  React.createElement('span', { className: 'dshn-rt-headmeta' }, meta),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'dshn-rt-body' },
+                  run.rows.length === 0
+                    ? React.createElement('div', { className: 'dshn-rt-empty' }, '还没有可显示的执行记录。')
+                    : run.rows.map((row) =>
+                        React.createElement(
+                          'div',
+                          { key: row.key, className: 'dshn-rt-row' + (row.live ? ' dshn-rt-live' : '') },
+                          React.createElement(
+                            'span',
+                            { className: 'dshn-rt-rowlabel' },
+                            row.live
+                              ? React.createElement('span', { className: 'dshn-rt-dot', 'aria-hidden': 'true' })
+                              : null,
+                            row.step !== null && row.step !== undefined
+                              ? React.createElement('span', { className: 'dshn-rt-step' }, row.step)
+                              : null,
+                            row.label,
+                          ),
+                          row.at
+                            ? React.createElement(
+                                'span',
+                                { className: 'dshn-rt-time' },
+                                new Date(row.at).toLocaleTimeString(),
+                              )
+                            : null,
+                        ),
+                      ),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'dshn-rt-hint' },
+                  '连按两次 Esc 停止本轮 · 直接在输入框打字可以插话纠错',
+                ),
+              ),
+              document.body,
+            )
+          : null,
+      )
+      return element
+    }
+
     return {
       inject: ['slots'],
       apply(ctx) {
         probe('apply', {})
         ensureStyle()
+
+        // 执行过程跟踪：底部状态条 + 步骤时间线（会话作用域，随会话挂载卸载）
+        ctx.effect(() => {
+          if (document.querySelector('style[data-dshn-run-trace]') !== null) return () => {}
+          const style = document.createElement('style')
+          style.setAttribute('data-dshn-run-trace', '1')
+          style.textContent = RT_CSS
+          document.head.appendChild(style)
+          return () => style.remove()
+        }, 'notch.run-trace.style')
+        ctx.slots.inject('conversation.composer.dock', function () {
+          return ctx.slots.register(
+            {
+              name: 'conversation.composer.dock',
+              id: 'notch-run-trace',
+              order: 2,
+            },
+            RunTracePill,
+          )
+        })
 
         const balance = createBalanceRing(ctx)
         try {
@@ -1423,6 +2430,37 @@ window.__ModuleLoader__.load({
               )
             },
           )
+        })
+
+        // 设置页：合盖不休眠。settings.section 是 root scope 的列表 slot，
+        // 由设置外壳声明并渲染；没有这个 slot 的组合里 inject 不会执行，天然降级。
+        // label 用函数而不是固定字符串：外壳切语言时重新求值，和 DSH 自带设置页一致。
+        ctx.slots.inject('settings.section', function () {
+          try {
+            const dispose = ctx.slots.register(
+              {
+                name: 'settings.section',
+                id: 'notch-lid-sleep',
+                order: 60,
+                label: () => lidSleepStrings(currentLocale(ctx)).label,
+              },
+              function LidSleepSettingsSlot(slotProps) {
+                return React.createElement(
+                  LidSleepSettings,
+                  Object.assign({}, slotProps, {
+                    strings: () => lidSleepStrings(currentLocale(ctx)),
+                  }),
+                )
+              },
+            )
+            // 诊断：只记「设置页 slot 注册成功」这一个事实，便于确认 HMR 后新代码真的加载了。
+            probe('lid-sleep-settings-registered', {})
+            return dispose
+          } catch (error) {
+            // 注册失败只记诊断，不能让设置页把整个 client 插件拖垮（余额环还在跑）。
+            probe('lid-sleep-settings-slot-error', { message: String(error?.message ?? error) })
+            return () => {}
+          }
         })
       },
     }
